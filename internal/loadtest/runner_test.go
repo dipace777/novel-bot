@@ -54,6 +54,9 @@ func benchmarkServer(t *testing.T, createStatus int) (*httptest.Server, *atomic.
 			var message struct {
 				ID     int    `json:"id"`
 				Method string `json:"method"`
+				Params struct {
+					Expression string `json:"expression"`
+				} `json:"params"`
 			}
 			if json.Unmarshal(data, &message) != nil {
 				return
@@ -71,7 +74,11 @@ func benchmarkServer(t *testing.T, createStatus int) (*httptest.Server, *atomic.
 					return
 				}
 			case "Runtime.evaluate":
-				result["result"] = map[string]string{"value": "complete"}
+				if message.Params.Expression == "document.readyState" {
+					result["result"] = map[string]string{"value": "complete"}
+				} else {
+					result["result"] = map[string]bool{"value": true}
+				}
 			}
 			reply, _ := json.Marshal(map[string]any{"id": message.ID, "result": result})
 			if conn.Write(r.Context(), websocket.MessageText, reply) != nil {
@@ -186,5 +193,31 @@ func TestCancellationCleansKnownBrowserSessions(t *testing.T) {
 	report, err := Run(ctx, cfg)
 	if err == nil || active.Load() != 0 || deletions.Load() != 1 || len(report.Recommendations) != 0 {
 		t.Fatalf("cancellation did not clean browsers: %v %+v", err, report)
+	}
+}
+
+func TestMixedScrapingChecksExtractionAndBalancesRoundWorkloads(t *testing.T) {
+	server, active, deletions := benchmarkServer(t, 201)
+	cfg := testConfig()
+	cfg.APIURL = server.URL
+	cfg.MetricsURLs = nil
+	cfg.Levels = []int{1}
+	cfg.Rounds = 3
+	cfg.Workload = "mixed"
+	cfg.FixtureURL = "http://fixtures:8082"
+	cfg.WorkerMemoryBytes = 0
+	cfg.Hold = 10 * time.Millisecond
+	report, err := Run(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stage := report.Stages[0]
+	if stage.Completed != 3 || stage.Actions != 3 || active.Load() != 0 || deletions.Load() != 3 {
+		t.Fatal("extraction/cleanup failed", stage.Completed, stage.Actions)
+	}
+	for _, name := range []string{"article", "feed", "dashboard"} {
+		if stage.Workloads[name] != 1 {
+			t.Fatal("low-concurrency mix omitted workload", name)
+		}
 	}
 }

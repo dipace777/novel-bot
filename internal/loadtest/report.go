@@ -10,15 +10,21 @@ import (
 )
 
 type Config struct {
-	APIURL, APIKey                               string
-	MetricsURLs                                  []string
-	WorkerToken                                  string
-	Levels                                       []int
-	Rounds                                       int
-	Hold, Timeout, SampleInterval, MaxStartupP95 time.Duration
-	WorkerMemoryBytes                            uint64
-	Headroom                                     float64
-	TargetURL                                    string
+	APIURL, APIKey                                     string
+	MetricsURLs                                        []string
+	WorkerToken                                        string
+	Levels                                             []int
+	Rounds                                             int
+	Hold, Timeout, SampleInterval, MaxStartupP95       time.Duration
+	WorkerMemoryBytes                                  uint64
+	Headroom                                           float64
+	TargetURL                                          string
+	Workload, FixtureURL                               string
+	RequireResources                                   bool
+	WorkerCPUs, MaxCPUUtilization, MaxThrottleFraction float64
+	MaxWorkloadP95                                     time.Duration
+	MaxActionP95                                       time.Duration
+	OnStage                                            func(Stage)
 }
 
 func origin(raw string) error {
@@ -32,8 +38,19 @@ func (c Config) Validate() error {
 	if err := origin(c.APIURL); err != nil {
 		return err
 	}
-	if c.APIKey == "" || len(c.Levels) == 0 || c.Rounds < 1 || c.Rounds > 1000 || c.Hold <= 0 || c.Hold > time.Hour || c.Timeout <= 0 || c.Timeout > 5*time.Minute || c.SampleInterval < 100*time.Millisecond || c.SampleInterval > time.Minute || c.MaxStartupP95 <= 0 || math.IsNaN(c.Headroom) || c.Headroom < .1 || c.Headroom >= 1 {
+	if c.MaxActionP95 < 0 || c.MaxWorkloadP95 < 0 || c.APIKey == "" || len(c.Levels) == 0 || c.Rounds < 1 || c.Rounds > 1000 || c.Hold <= 0 || c.Hold > time.Hour || c.Timeout <= 0 || c.Timeout > 5*time.Minute || c.SampleInterval < 100*time.Millisecond || c.SampleInterval > time.Minute || c.MaxStartupP95 <= 0 || math.IsNaN(c.Headroom) || c.Headroom < .1 || c.Headroom >= 1 {
 		return fmt.Errorf("invalid load test configuration")
+	}
+	if c.Workload != "" {
+		if _, err := workloadNames(c.Workload); err != nil {
+			return err
+		}
+		if err := origin(c.FixtureURL); err != nil {
+			return fmt.Errorf("fixture URL must be a browser-reachable HTTP(S) origin")
+		}
+	}
+	if c.RequireResources && (c.WorkerMemoryBytes == 0 || c.WorkerCPUs <= 0 || c.WorkerCPUs > 1024 || math.IsNaN(c.WorkerCPUs) || c.MaxCPUUtilization <= 0 || c.MaxCPUUtilization > 1 || math.IsNaN(c.MaxCPUUtilization) || c.MaxThrottleFraction < 0 || c.MaxThrottleFraction > 1 || math.IsNaN(c.MaxThrottleFraction)) {
+		return fmt.Errorf("container qualification requires memory/CPU budgets and valid resource thresholds")
 	}
 	last := 0
 	for _, n := range c.Levels {
@@ -55,6 +72,9 @@ func (c Config) Validate() error {
 	if len(c.MetricsURLs) > 0 && (len(c.WorkerToken) < 32 || c.Hold < 2*c.SampleInterval) {
 		return fmt.Errorf("worker metrics require a worker credential and hold time of at least two scrape intervals")
 	}
+	if c.Workload != "" {
+		return nil
+	}
 	u, err := url.Parse(c.TargetURL)
 	if err != nil || u.User != nil || (u.Scheme != "http" && u.Scheme != "https" && u.Scheme != "data") {
 		return fmt.Errorf("workload URL must use HTTP(S) or data without credentials")
@@ -63,6 +83,7 @@ func (c Config) Validate() error {
 }
 
 type WorkerEvidence struct {
+	resourceEvidence
 	WorkerID             string `json:"worker_id"`
 	PeakActive           int    `json:"peak_active_sessions"`
 	PeakReserved         int    `json:"peak_reserved_sessions"`
@@ -86,6 +107,9 @@ type Stage struct {
 	StartupP99    float64                    `json:"startup_p99_seconds"`
 	WorkloadP95   float64                    `json:"navigation_p95_seconds"`
 	Workers       map[string]*WorkerEvidence `json:"workers"`
+	Actions       int                        `json:"extraction_actions"`
+	ActionP95     float64                    `json:"extraction_action_p95_seconds"`
+	Workloads     map[string]int             `json:"workload_sessions,omitempty"`
 	MetricsErrors int                        `json:"metrics_errors"`
 	Qualified     bool                       `json:"qualified"`
 	Reasons       []string                   `json:"qualification_failures,omitempty"`
@@ -97,16 +121,24 @@ type Recommendation struct {
 	SuggestedCapacity int    `json:"suggested_capacity_upper_bound"`
 }
 type Report struct {
-	StartedAt         time.Time        `json:"started_at"`
-	DurationSeconds   float64          `json:"duration_seconds"`
-	Rounds            int              `json:"rounds"`
-	HoldSeconds       float64          `json:"hold_seconds"`
-	WorkerMemoryBytes uint64           `json:"worker_memory_budget_bytes"`
-	Headroom          float64          `json:"memory_headroom_fraction"`
-	MaxStartupP95     float64          `json:"startup_p95_threshold_seconds"`
-	Stages            []Stage          `json:"stages"`
-	Recommendations   []Recommendation `json:"recommendations"`
-	Notes             []string         `json:"notes"`
+	MaxActionP95        float64          `json:"extraction_p95_threshold_seconds"`
+	Workload            string           `json:"workload"`
+	FixtureVersion      string           `json:"fixture_version,omitempty"`
+	RequireResources    bool             `json:"require_container_resources"`
+	WorkerCPUs          float64          `json:"worker_cpu_budget_cores"`
+	MaxCPUUtilization   float64          `json:"cpu_utilization_p95_threshold"`
+	MaxThrottleFraction float64          `json:"throttled_periods_p95_threshold"`
+	MaxWorkloadP95      float64          `json:"navigation_p95_threshold_seconds"`
+	StartedAt           time.Time        `json:"started_at"`
+	DurationSeconds     float64          `json:"duration_seconds"`
+	Rounds              int              `json:"rounds"`
+	HoldSeconds         float64          `json:"hold_seconds"`
+	WorkerMemoryBytes   uint64           `json:"worker_memory_budget_bytes"`
+	Headroom            float64          `json:"memory_headroom_fraction"`
+	MaxStartupP95       float64          `json:"startup_p95_threshold_seconds"`
+	Stages              []Stage          `json:"stages"`
+	Recommendations     []Recommendation `json:"recommendations"`
+	Notes               []string         `json:"notes"`
 }
 
 func percentile(samples []float64, p float64) float64 {
@@ -128,6 +160,15 @@ func qualify(s *Stage, c Config) {
 	if len(c.MetricsURLs) == 0 || len(s.Workers) != len(c.MetricsURLs) || s.MetricsErrors > 0 {
 		s.Reasons = append(s.Reasons, "worker metrics missing or failed")
 	}
+	if c.MaxWorkloadP95 > 0 && s.WorkloadP95 > c.MaxWorkloadP95.Seconds() {
+		s.Reasons = append(s.Reasons, "navigation p95 exceeded threshold")
+	}
+	if c.MaxActionP95 > 0 && s.ActionP95 > c.MaxActionP95.Seconds() {
+		s.Reasons = append(s.Reasons, "extraction action p95 exceeded threshold")
+	}
+	if c.Workload != "" && s.Actions < s.Completed {
+		s.Reasons = append(s.Reasons, "scraping workload actions were not verified")
+	}
 	if c.WorkerMemoryBytes == 0 {
 		s.Reasons = append(s.Reasons, "worker memory budget not supplied")
 	}
@@ -135,7 +176,12 @@ func qualify(s *Stage, c Config) {
 		if w.Unhealthy || w.SteadySamples < 2 || w.PeakActive == 0 || w.PeakBrowserRSS == 0 {
 			s.Reasons = append(s.Reasons, id+": insufficient healthy memory samples at target concurrency")
 		}
-		if c.WorkerMemoryBytes > 0 && float64(w.PeakTotalRSS) > float64(c.WorkerMemoryBytes)*(1-c.Headroom) {
+		if c.RequireResources {
+			for _, reason := range resourceReasons(w, c) {
+				s.Reasons = append(s.Reasons, id+": "+reason)
+			}
+		}
+		if !c.RequireResources && c.WorkerMemoryBytes > 0 && float64(w.PeakTotalRSS) > float64(c.WorkerMemoryBytes)*(1-c.Headroom) {
 			s.Reasons = append(s.Reasons, id+": memory budget with headroom exceeded")
 		}
 	}
@@ -151,6 +197,9 @@ func recommendations(stages []Stage, c Config) []Recommendation {
 			available := float64(c.WorkerMemoryBytes)*(1-c.Headroom) - float64(w.PeakServiceRSS)
 			perBrowser := float64(w.PeakBrowserRSS) / float64(w.PeakActive)
 			estimate := max(0, int(math.Floor(available/perBrowser)))
+			if c.RequireResources {
+				estimate = w.PeakActive
+			} // Container peak and CPU qualify only directly tested occupancy; do not extrapolate resource capacity.
 			suggestion := min(estimate, w.PeakActive, stage.Concurrency)
 			candidate := Recommendation{id, w.PeakActive, estimate, suggestion}
 			// Retain the strongest directly tested bound; never recommend above observed concurrency.

@@ -99,9 +99,12 @@ Overrides for an isolated deployment include `COMPOSE_API_PORT`,
 `COMPOSE_WORKER_A_PORT`, `COMPOSE_WORKER_B_PORT`, `COMPOSE_POSTGRES_PORT`,
 `COMPOSE_REDIS_PORT`, and `COMPOSE_REDIS_NAMESPACE`.
 
-Workers default to two browser slots, 4 GiB memory, and 512 MiB shared memory.
-Adjust `COMPOSE_WORKER_MAX_SESSIONS` and `COMPOSE_WORKER_MEMORY` after measuring
-representative workloads; these examples are not production capacity guarantees.
+Workers default to six browser slots, 4 CPUs, 4 GiB memory, 2,048 tasks, and
+512 MiB shared memory, with swap disabled. The API has a separate 1 CPU, 512 MiB,
+128-task limit. These defaults come from the controlled local workload baseline
+in [worker sizing](capacity.md). Adjust the `COMPOSE_WORKER_*` and `COMPOSE_API_*`
+settings after remeasuring on your deployment hardware. Budget node resources
+for all co-located workers, the API, infrastructure, and the operating system.
 The worker runs as a non-root user with a Chromium-compatible seccomp profile and
 its browser sandbox enabled; the Docker host must support user namespaces. See
 [container sandbox notes](../deploy/README.md).

@@ -8,6 +8,10 @@ The default controlled workload renders 5,000 DOM rows. This gives repeatable
 local measurements; replace it with a representative application/page to size
 real workloads.
 
+For a repeatable mixed scraping sweep plus soak/churn validation under enforced
+CPU/memory limits, run `make capacity`; see [worker sizing](capacity.md). The
+original `--target-url` mode below remains available for custom pages.
+
 ## Run locally
 
 Start PostgreSQL/Redis and the API and worker first:
@@ -120,6 +124,12 @@ networks, session churn, and worker failures before setting production capacity.
 Run the generator on a separate host for larger experiments so its own resource
 usage does not compete with Chromium. Configure the worker's capacity below the
 observed upper bound, then validate it under representative sustained load.
+
+With `--require-container-resources`, qualification uses kernel container memory
+peak and CPU/task/OOM evidence rather than summed RSS for the resource gate.
+`--workload mixed --fixture-url <browser-reachable-origin>` enables repeated
+scrolling/extraction, with separate action and navigation latency thresholds.
+See [worker sizing](capacity.md) for the complete resource checks.
 
 ## Automated verification
 

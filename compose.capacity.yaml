@@ -1,0 +1,35 @@
+# Run with compose.yaml, selecting api and worker-a only; capacity.py manages isolation.
+services:
+  fixtures:
+    profiles: [benchmark]
+    build:
+      context: .
+      target: fixtures
+    healthcheck:
+      test: [CMD, healthcheck, "http://127.0.0.1:8082/healthz"]
+      interval: 2s
+      timeout: 4s
+      retries: 10
+    init: true
+    mem_limit: 256m
+    cpus: 1
+    pids_limit: 128
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+  worker-a:
+    cpus: ${COMPOSE_WORKER_CPUS:-4}
+    mem_limit: ${COMPOSE_WORKER_MEMORY:-4g}
+    memswap_limit: ${COMPOSE_WORKER_MEMORY:-4g}
+    pids_limit: ${CAPACITY_PIDS_LIMIT:-2048}
+    environment:
+      BROWSER_MAX_SESSIONS: ${CAPACITY_MAX_SESSIONS:-16}
+      METRICS_SAMPLE_INTERVAL: 1s
+    depends_on:
+      fixtures:
+        condition: service_healthy
+
+  api:
+    mem_limit: 512m
+    cpus: 1
+    pids_limit: 128

@@ -161,7 +161,23 @@ func (c *cdp) probe(ctx context.Context, session string) error {
 	}
 	return nil
 }
-func (c *cdp) hold(ctx context.Context, done <-chan struct{}, timeout time.Duration, session string) error {
+func (c *cdp) extract(ctx context.Context, session string) error {
+	result, err := c.call(ctx, "Runtime.evaluate", map[string]any{"expression": "(async()=>{if(!window.novelbotBenchmark)throw Error('fixture unavailable');return await window.novelbotBenchmark.step()})()", "awaitPromise": true, "returnByValue": true}, session)
+	if err != nil {
+		return err
+	}
+	var reply struct {
+		Result struct {
+			Value bool `json:"value"`
+		}
+		Exception json.RawMessage `json:"exceptionDetails"`
+	}
+	if json.Unmarshal(result, &reply) != nil || !reply.Result.Value || len(reply.Exception) > 0 {
+		return fmt.Errorf("scraping extraction failed")
+	}
+	return nil
+}
+func (c *cdp) hold(ctx context.Context, done <-chan struct{}, timeout time.Duration, session string, action func(context.Context) error) error {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	for {
@@ -171,10 +187,18 @@ func (c *cdp) hold(ctx context.Context, done <-chan struct{}, timeout time.Durat
 		case <-done:
 			probe, cancel := context.WithTimeout(ctx, timeout)
 			defer cancel()
+			if action != nil {
+				return action(probe)
+			}
 			return c.probe(probe, session)
 		case <-ticker.C:
 			probe, cancel := context.WithTimeout(ctx, timeout)
-			err := c.probe(probe, session)
+			var err error
+			if action != nil {
+				err = action(probe)
+			} else {
+				err = c.probe(probe, session)
+			}
 			cancel()
 			if err != nil {
 				return err

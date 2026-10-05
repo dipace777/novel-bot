@@ -22,11 +22,12 @@ type Worker interface {
 type Groups interface{ ProcessGroups() []int }
 
 type Metrics struct {
-	registry *prometheus.Registry
-	register prometheus.Registerer
-	startup  *prometheus.HistogramVec
-	events   *prometheus.CounterVec
-	memory   *memoryCollector
+	registry  *prometheus.Registry
+	register  prometheus.Registerer
+	startup   *prometheus.HistogramVec
+	events    *prometheus.CounterVec
+	memory    *memoryCollector
+	resources *resourceCollector
 }
 
 func New(workerID string) *Metrics {
@@ -37,7 +38,8 @@ func New(workerID string) *Metrics {
 	m.events = prometheus.NewCounterVec(prometheus.CounterOpts{Name: "novelbot_worker_events_total", Help: "Browser lifecycle, lease, and directory cleanup events."}, []string{"event"})
 	register.MustRegister(m.startup, m.events, collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 	m.memory = newMemoryCollector()
-	register.MustRegister(m.memory)
+	m.resources = newResourceCollector()
+	register.MustRegister(m.memory, m.resources)
 	return m
 }
 func (m *Metrics) ObserveLaunch(elapsed time.Duration, err error) {
@@ -83,6 +85,7 @@ func (m *Metrics) Sample(ctx context.Context, groups Groups, interval time.Durat
 	m.memory.sample.Interval = interval.Seconds()
 	m.memory.mu.Unlock()
 	sample := func() {
+		m.resources.update()
 		ids := groups.ProcessGroups()
 		bounded, cancel := context.WithTimeout(ctx, 2*time.Second)
 		rows, err := processMemory(bounded)

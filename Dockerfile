@@ -8,7 +8,8 @@ COPY . .
 RUN CGO_ENABLED=0 go build -trimpath -o /out/api ./cmd/api \
  && CGO_ENABLED=0 go build -trimpath -o /out/worker ./cmd/worker \
  && CGO_ENABLED=0 go build -trimpath -o /out/migrate ./cmd/migrate \
- && CGO_ENABLED=0 go build -trimpath -o /out/healthcheck ./cmd/healthcheck
+ && CGO_ENABLED=0 go build -trimpath -o /out/healthcheck ./cmd/healthcheck \
+ && CGO_ENABLED=0 go build -trimpath -o /out/fixtures ./cmd/fixtures
 
 FROM debian:bookworm-slim AS base
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
@@ -36,3 +37,8 @@ USER novelbot
 ENV CHROMIUM_PATH=/usr/bin/chromium
 EXPOSE 8090
 ENTRYPOINT ["worker"]
+
+FROM base AS fixtures
+COPY --from=build /out/fixtures /usr/local/bin/fixtures
+EXPOSE 8082
+ENTRYPOINT ["fixtures"]

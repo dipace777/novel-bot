@@ -29,7 +29,7 @@ func TestRoleDefaultsAndOverrides(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if worker.BrowserMaxSessions != 10 || worker.BrowserSessionTTL != 15*time.Minute || worker.BrowserStartupTimeout != 10*time.Second || worker.WorkerLeaseTTL != 15*time.Second || worker.RedisURL != "redis://localhost:6930/0" || worker.MetricsSampleInterval != 5*time.Second {
+	if worker.BrowserMaxSessions != 6 || worker.BrowserSessionTTL != 15*time.Minute || worker.BrowserStartupTimeout != 10*time.Second || worker.WorkerLeaseTTL != 15*time.Second || worker.RedisURL != "redis://localhost:6930/0" || worker.MetricsSampleInterval != 5*time.Second {
 		t.Fatal("unexpected worker defaults")
 	}
 	for name, v := range map[string]string{"HTTP_ADDR": "127.0.0.1:9000", "DB_MAX_CONNS": "50", "AUTH_TIMEOUT": "500ms", "SESSION_TTL": "12h", "SESSION_STARTUP_TIMEOUT": "20s", "PUBLIC_API_URL": "https://browsers.example.com", "AUTH_REQUESTS_PER_MINUTE": "60", "TRUSTED_PROXY_CIDRS": "127.0.0.0/8, 10.0.0.0/24", "WORKER_ID": "worker-2", "WORKER_URL": "http://127.0.0.1:8091", "WORKER_HTTP_ADDR": "127.0.0.1:8091", "REDIS_URL": "redis://localhost:7000/1", "WORKER_LEASE_TTL": "30s", "BROWSER_MAX_SESSIONS": "3", "BROWSER_SESSION_TTL": "30m", "BROWSER_STARTUP_TIMEOUT": "20s", "CHROMIUM_PATH": "/bin/chromium", "BROWSER_PROFILE_DIR": "/tmp/profiles", "METRICS_SAMPLE_INTERVAL": "1s"} {

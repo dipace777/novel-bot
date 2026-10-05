@@ -45,7 +45,7 @@ func LoadWorker() (WorkerConfig, error) {
 	}
 	cfg.ChromiumPath = os.Getenv("CHROMIUM_PATH")
 	cfg.BrowserProfileDir = os.Getenv("BROWSER_PROFILE_DIR")
-	if cfg.BrowserMaxSessions, err = integer("BROWSER_MAX_SESSIONS", 10, 10000); err != nil {
+	if cfg.BrowserMaxSessions, err = integer("BROWSER_MAX_SESSIONS", 6, 10000); err != nil {
 		return WorkerConfig{}, err
 	}
 	if cfg.BrowserSessionTTL, err = duration("BROWSER_SESSION_TTL", 15*time.Minute, time.Nanosecond, 24*time.Hour); err != nil {

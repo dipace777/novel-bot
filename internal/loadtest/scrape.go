@@ -9,12 +9,14 @@ import (
 	"strings"
 	"time"
 
+	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
 )
 
 type workerSample struct {
 	ID                                    string
+	Resource                              resourceSnapshot
 	Active, Reserved, Starting, Processes int
 	BrowserRSS, ServiceRSS                uint64
 	Ready, MemoryOK                       bool
@@ -65,7 +67,11 @@ func scrape(ctx context.Context, client *http.Client, origin, token string) (wor
 		}
 		values[name] = value
 	}
-	return workerSample{ID: id, Active: int(values["novelbot_worker_active_sessions"]), Reserved: int(values["novelbot_worker_reserved_sessions"]), Starting: int(values["novelbot_worker_starting_sessions"]), Ready: values["novelbot_worker_ready"] == 1, MemoryOK: values["novelbot_browser_memory_sample_success"] == 1, BrowserRSS: uint64(values["novelbot_browser_rss_bytes"]), ServiceRSS: uint64(values["novelbot_worker_service_rss_bytes"]), Processes: int(values["novelbot_browser_processes"]), Stamp: values["novelbot_browser_memory_sample_timestamp_seconds"], Interval: values["novelbot_browser_memory_sample_interval_seconds"]}, nil
+	resource, err := scrapeResource(families, id)
+	if err != nil {
+		return workerSample{}, err
+	}
+	return workerSample{Resource: resource, ID: id, Active: int(values["novelbot_worker_active_sessions"]), Reserved: int(values["novelbot_worker_reserved_sessions"]), Starting: int(values["novelbot_worker_starting_sessions"]), Ready: values["novelbot_worker_ready"] == 1, MemoryOK: values["novelbot_browser_memory_sample_success"] == 1, BrowserRSS: uint64(values["novelbot_browser_rss_bytes"]), ServiceRSS: uint64(values["novelbot_worker_service_rss_bytes"]), Processes: int(values["novelbot_browser_processes"]), Stamp: values["novelbot_browser_memory_sample_timestamp_seconds"], Interval: values["novelbot_browser_memory_sample_interval_seconds"]}, nil
 }
 func scrapeAll(ctx context.Context, client *http.Client, c Config) ([]workerSample, error) {
 	type result struct {
@@ -110,6 +116,7 @@ func observeSamples(s *Stage, samples []workerSample, holding bool) {
 			evidence = &WorkerEvidence{WorkerID: sample.ID}
 			s.Workers[sample.ID] = evidence
 		}
+		evidence.observeResource(sample.Resource, atTarget && sample.Active > 0, sample.Interval)
 		evidence.PeakActive = max(evidence.PeakActive, sample.Active)
 		evidence.PeakReserved = max(evidence.PeakReserved, sample.Reserved)
 		if !sample.Ready || total > s.Concurrency {
@@ -132,4 +139,33 @@ func observeSamples(s *Stage, samples []workerSample, holding bool) {
 			evidence.SteadySamples++
 		}
 	}
+}
+
+func scrapeResource(families map[string]*dto.MetricFamily, id string) (resourceSnapshot, error) {
+	var s resourceSnapshot
+	family := families["novelbot_container_sample_success"]
+	if family == nil {
+		return s, nil
+	} // Older/non-container workers remain usable for RSS-only runs.
+	values := map[string]float64{}
+	for _, name := range []string{"sample_success", "sample_timestamp_seconds", "memory_bytes", "memory_peak_bytes", "memory_limit_bytes", "swap_bytes", "oom_events", "memory_limit_events", "cpu_seconds", "cpu_throttled_seconds", "cpu_limit_cores", "cpu_periods", "cpu_throttled_periods", "pids", "pids_limit", "pids_limit_events"} {
+		family := families["novelbot_container_"+name]
+		if family == nil || len(family.Metric) != 1 || family.Metric[0].Gauge == nil {
+			return s, fmt.Errorf("container resource metric missing")
+		}
+		metric := family.Metric[0]
+		same := false
+		for _, label := range metric.Label {
+			if label.GetName() == "worker_id" && label.GetValue() == id {
+				same = true
+			}
+		}
+		value := metric.Gauge.GetValue()
+		if !same || math.IsNaN(value) || math.IsInf(value, 0) || value < 0 || value > 1e18 {
+			return s, fmt.Errorf("invalid container resource metric")
+		}
+		values[name] = value
+	}
+	s = resourceSnapshot{OK: values["sample_success"] == 1, Stamp: values["sample_timestamp_seconds"], Memory: uint64(values["memory_bytes"]), PeakMemory: uint64(values["memory_peak_bytes"]), Limit: uint64(values["memory_limit_bytes"]), Swap: uint64(values["swap_bytes"]), OOM: uint64(values["oom_events"]), MemoryHits: uint64(values["memory_limit_events"]), CPU: values["cpu_seconds"], Throttled: values["cpu_throttled_seconds"], CPULimit: values["cpu_limit_cores"], Periods: uint64(values["cpu_periods"]), ThrottledPeriods: uint64(values["cpu_throttled_periods"]), PIDs: uint64(values["pids"]), PIDLimit: uint64(values["pids_limit"]), PIDHits: uint64(values["pids_limit_events"])}
+	return s, nil
 }

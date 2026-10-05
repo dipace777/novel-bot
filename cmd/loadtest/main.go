@@ -33,6 +33,14 @@ func run() int {
 	flag.DurationVar(&cfg.MaxStartupP95, "max-startup-p95", 2*time.Second, "Maximum acceptable client-observed creation p95")
 	flag.StringVar(&cfg.TargetURL, "target-url", loadtest.DefaultTarget(), "CDP navigation workload; default renders 5000 DOM rows")
 	flag.StringVar(&output, "output", "loadtest-report.json", "JSON report output")
+	flag.StringVar(&cfg.Workload, "workload", "", "Controlled workload: article, feed, dashboard, mixed; empty uses target-url")
+	flag.StringVar(&cfg.FixtureURL, "fixture-url", "", "Fixture HTTP origin reachable from browser workers")
+	flag.BoolVar(&cfg.RequireResources, "require-container-resources", false, "Qualify with enforced cgroup v2 CPU, memory, and task limits")
+	flag.Float64Var(&cfg.WorkerCPUs, "worker-cpus", 4, "Enforced worker CPU budget for container qualification")
+	flag.Float64Var(&cfg.MaxCPUUtilization, "max-cpu-utilization", .8, "Maximum steady CPU utilization p95 as fraction of CPU quota")
+	flag.Float64Var(&cfg.MaxThrottleFraction, "max-throttle-fraction", .2, "Maximum steady throttled-period fraction p95")
+	flag.DurationVar(&cfg.MaxWorkloadP95, "max-navigation-p95", 5*time.Second, "Maximum acceptable navigation/extraction p95")
+	flag.DurationVar(&cfg.MaxActionP95, "max-action-p95", time.Second, "Maximum scraping extraction action p95")
 	flag.Parse()
 	cfg.APIKey = os.Getenv("LOADTEST_API_KEY")
 	cfg.WorkerToken = os.Getenv("LOADTEST_WORKER_TOKEN")
@@ -69,6 +77,9 @@ func run() int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	fmt.Fprintln(os.Stderr, "Running browser load test; credentials are read from LOADTEST_API_KEY and LOADTEST_WORKER_TOKEN.")
+	cfg.OnStage = func(stage loadtest.Stage) {
+		fmt.Printf("concurrency=%d created=%d/%d completed=%d startup_p95=%.3fs qualified=%t\n", stage.Concurrency, stage.Created, stage.Attempted, stage.Completed, stage.StartupP95, stage.Qualified)
+	}
 	report, err := loadtest.Run(ctx, cfg)
 	data, marshalErr := json.MarshalIndent(report, "", "  ")
 	if marshalErr != nil {
@@ -78,9 +89,6 @@ func run() int {
 	if writeErr := os.WriteFile(output, append(data, '\n'), 0600); writeErr != nil {
 		fmt.Fprintln(os.Stderr, "Could not write report")
 		return 1
-	}
-	for _, stage := range report.Stages {
-		fmt.Printf("concurrency=%d created=%d/%d completed=%d startup_p95=%.3fs qualified=%t\n", stage.Concurrency, stage.Created, stage.Attempted, stage.Completed, stage.StartupP95, stage.Qualified)
 	}
 	for _, recommendation := range report.Recommendations {
 		fmt.Printf("worker=%s tested=%d suggested_capacity_upper_bound=%d\n", recommendation.WorkerID, recommendation.TestedSessions, recommendation.SuggestedCapacity)

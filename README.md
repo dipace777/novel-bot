@@ -16,6 +16,7 @@ cmd/
   healthcheck/         Bounded container readiness probe
   migrate/             Database migration executable
   loadtest/            REST/CDP workload generator and capacity reports
+  fixtures/            Controlled HTTP targets for capacity tests
 internal/
   auth/
     accounts.go        Registration, login, and login sessions
@@ -58,6 +59,7 @@ migrations/            Embedded, ordered, checksummed SQL migrations
 api/                   OpenAPI contract and bundled Swagger UI
 .vscode/settings.json  Go module proxy configuration for the editor
 compose.yaml           PostgreSQL/Redis plus API and two workers (app profile)
+compose.capacity.yaml  Isolated worker resource sizing and workload fixtures
 Dockerfile             Separate API, worker, and migration image targets
 .env.example           Configuration template
 Makefile               Development and verification commands
@@ -326,6 +328,14 @@ Suggested capacity never exceeds directly tested concurrency. See
 [load testing](docs/load-testing.md) for isolation, quotas, longer workloads,
 multiple workers, report interpretation, and optional Chromium smoke tests.
 
+`make capacity` runs a controlled mixed scraping sweep, individual workload
+checks, longer holds, and repeated churn in an isolated Docker deployment.
+Container metrics include kernel memory peak, CPU usage/throttling, OOM events,
+and task counts. The deployment baseline is six sessions per worker with 4 CPUs,
+4 GiB memory, no swap, and a 2,048-task limit; the API has its own 1 CPU/512 MiB
+allocation. See [worker sizing](docs/capacity.md) for the evidence, thresholds,
+resource overrides, and how to reproduce or retune the measurements.
+
 ## Tenant admission limits
 
 Run `make migrate` before restarting the API after this update. Migration
@@ -409,7 +419,7 @@ budget. Forwarded headers from untrusted peers cannot change limiter identity.
 | `CHROMIUM_PATH` | Auto-discovery | Chromium/Chrome executable |
 | `BROWSER_PROFILE_DIR` | OS temp directory | Existing parent directory for isolated profiles |
 | `METRICS_SAMPLE_INTERVAL` | `5s` | Background browser/worker RSS sample interval; accepts 250ms–1m |
-| `BROWSER_MAX_SESSIONS` | `10` | Capacity per worker, including pending launches |
+| `BROWSER_MAX_SESSIONS` | `6` | Capacity per worker, including pending launches |
 | `BROWSER_SESSION_TTL` | `15m` | Worker lifetime cap; effective lifetime also respects the tenant policy |
 | `BROWSER_STARTUP_TIMEOUT` | `10s` | Worker launch deadline; positive duration up to 24h |
 | `SESSION_STARTUP_TIMEOUT` | `10s` | API reservation/RPC startup budget; at least the worker launch deadline |
@@ -421,6 +431,11 @@ budget. Forwarded headers from untrusted peers cannot change limiter identity.
 | `WORKER_URL` | `http://127.0.0.1:8090` | Private HTTP(S) origin reachable by all API replicas |
 | `WORKER_LEASE_TTL` | `15s` | Worker lease; renewed every one third of its lifetime; accepts 3s to 5m |
 | `WORKER_AUTH_TOKEN` | Required | Shared private worker credential, at least 32 characters; API and worker roles |
+| `COMPOSE_WORKER_MAX_SESSIONS` | `6` | Browser slots in the container deployment |
+| `COMPOSE_WORKER_CPUS` / `COMPOSE_WORKER_MEMORY` | `4` / `4g` | Enforced worker CPU and memory budgets |
+| `COMPOSE_WORKER_PIDS_LIMIT` | `2048` | Worker task limit, including threads |
+| `COMPOSE_API_CPUS` / `COMPOSE_API_MEMORY` | `1` / `512m` | Enforced API CPU and memory budgets |
+| `COMPOSE_API_PIDS_LIMIT` | `128` | API task limit |
 
 Set `PUBLIC_API_URL=https://browsers.example.com` behind a TLS reverse proxy so
 returned connection URLs use `wss`. Forwarded headers are not trusted to construct

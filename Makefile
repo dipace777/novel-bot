@@ -1,7 +1,7 @@
 SQLC_VERSION := v1.31.1
 SQLC := $(CURDIR)/bin/sqlc
 
-.PHONY: run build test vet db redis migrate tools generate sqlc-check loadtest run-api run-worker up down
+.PHONY: run build test vet db redis migrate tools generate sqlc-check loadtest run-api run-worker up down capacity
 
 run: run-api
 
@@ -17,6 +17,7 @@ build:
 	go build -o bin/healthcheck ./cmd/healthcheck
 	go build -o bin/migrate ./cmd/migrate
 	go build -o bin/loadtest ./cmd/loadtest
+	go build -o bin/fixtures ./cmd/fixtures
 
 test:
 	go test -race ./...
@@ -55,3 +56,8 @@ up:
 
 down:
 	docker compose --profile app down
+
+# Isolated worker resource sizing; generated reports go to loadtest-results/.
+capacity:
+	go build -o bin/loadtest ./cmd/loadtest
+	python3 scripts/capacity.py $(CAPACITY_ARGS)

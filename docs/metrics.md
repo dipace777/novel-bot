@@ -88,3 +88,29 @@ novelbot_browser_rss_bytes + novelbot_worker_service_rss_bytes
 Check `novelbot_browser_memory_sample_success == 0`, stale sample timestamps,
 `novelbot_worker_ready == 0`, startup error/timeout rates, and accumulating cleanup
 retries. The lifecycle/event label values are fixed by application call sites.
+
+## Container resources
+
+Workers also sample their own Linux cgroup v2 alongside RSS. These snapshots include
+Chromium children, container page cache, shared memory, and all cgroup tasks. On
+macOS, unsupported kernels, or incomplete/unreadable cgroup files,
+`novelbot_container_sample_success` is zero; resource qualification fails explicitly.
+Finite CPU/memory/task limits are required by the capacity experiment.
+
+| Metric suffix (prefix `novelbot_container_`) | Meaning |
+| --- | --- |
+| `sample_success`, `sample_timestamp_seconds` | Completeness and timestamp of the last complete resource snapshot |
+| `memory_bytes`, `memory_peak_bytes`, `memory_limit_bytes` | Current usage, lifetime kernel peak, enforced limit |
+| `swap_bytes` | Current swap use |
+| `oom_events`, `memory_limit_events` | Cumulative OOM and memory-max events |
+| `cpu_seconds`, `cpu_throttled_seconds` | Cumulative CPU usage and throttled time |
+| `cpu_limit_cores` | CPU quota divided by enforcement period |
+| `cpu_periods`, `cpu_throttled_periods` | Cumulative enforcement and throttled periods |
+| `pids`, `pids_limit`, `pids_limit_events` | Tasks (processes plus threads), limit, cumulative rejected forks |
+
+These are gauges from one coherent background snapshot, including the cumulative
+cgroup values. The capacity runner computes deltas and detects counter resets;
+it does not mistake a worker restart for lower CPU consumption. A limit of zero
+means unlimited. Container memory and RSS have different accounting and are
+reported separately. See [worker sizing](capacity.md) for qualification thresholds
+and workload runs.

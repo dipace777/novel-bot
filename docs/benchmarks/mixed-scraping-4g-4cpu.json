@@ -1,0 +1,736 @@
+{
+  "generated_at": "2026-10-05T19:39:19.194220+00:00",
+  "environment": {
+    "Architecture": "aarch64",
+    "NCPU": 10,
+    "MemTotal": 8217059328,
+    "KernelVersion": "6.12.76-linuxkit",
+    "CgroupVersion": "2",
+    "ServerVersion": "29.3.1"
+  },
+  "chromium": "Chromium 154.0.8037.92 built on Debian GNU/Linux 12 (bookworm)",
+  "fixture_version": "mixed-scraping-v1",
+  "limits": {
+    "worker_cpus": 4.0,
+    "worker_memory_bytes": 4294967296,
+    "worker_capacity": 6,
+    "worker_pids_limit": 2048,
+    "shared_memory_bytes": 536870912
+  },
+  "highest_qualified_sweep_concurrency": 8,
+  "api_peak_container_memory_bytes": 23003136,
+  "reports": [
+    {
+      "name": "mixed-sweep",
+      "report": {
+        "extraction_p95_threshold_seconds": 1,
+        "workload": "mixed",
+        "fixture_version": "mixed-scraping-v1",
+        "require_container_resources": true,
+        "worker_cpu_budget_cores": 4,
+        "cpu_utilization_p95_threshold": 0.8,
+        "throttled_periods_p95_threshold": 0.2,
+        "navigation_p95_threshold_seconds": 5,
+        "started_at": "2026-10-05T19:25:26.544743Z",
+        "duration_seconds": 315.447246708,
+        "rounds": 3,
+        "hold_seconds": 20,
+        "worker_memory_budget_bytes": 4294967296,
+        "memory_headroom_fraction": 0.3,
+        "startup_p95_threshold_seconds": 2,
+        "stages": [
+          {
+            "concurrency": 1,
+            "attempted": 3,
+            "created": 3,
+            "completed": 3,
+            "failures": {},
+            "startup_p50_seconds": 0.077953667,
+            "startup_p95_seconds": 0.083084125,
+            "startup_p99_seconds": 0.083084125,
+            "navigation_p95_seconds": 0.099798916,
+            "workers": {
+              "worker-a": {
+                "container_samples": 60,
+                "container_steady_samples": 57,
+                "peak_container_memory_bytes": 280748032,
+                "container_memory_limit_bytes": 4294967296,
+                "peak_swap_bytes": 0,
+                "container_cpu_limit_cores": 4,
+                "peak_cpu_utilization_fraction": 0.20784117351116355,
+                "steady_cpu_utilization_p95_fraction": 0.027756097622787797,
+                "steady_throttled_periods_p95_fraction": 0,
+                "peak_container_tasks": 144,
+                "container_task_limit": 2048,
+                "oom_events_during_test": 0,
+                "memory_limit_events_during_test": 0,
+                "task_limit_events_during_test": 0,
+                "container_samples_unhealthy": false,
+                "worker_id": "worker-a",
+                "peak_active_sessions": 1,
+                "peak_reserved_sessions": 1,
+                "peak_browser_rss_bytes": 1217511424,
+                "peak_service_rss_bytes": 31019008,
+                "peak_total_rss_bytes": 1244196864,
+                "peak_browser_processes": 11,
+                "fresh_memory_samples": 60,
+                "fresh_samples_at_target_concurrency": 60,
+                "unhealthy_or_missing_samples": false
+              }
+            },
+            "extraction_actions": 62,
+            "extraction_action_p95_seconds": 0.015486084,
+            "workload_sessions": {
+              "article": 1,
+              "dashboard": 1,
+              "feed": 1
+            },
+            "metrics_errors": 0,
+            "qualified": true
+          },
+          {
+            "concurrency": 2,
+            "attempted": 6,
+            "created": 6,
+            "completed": 6,
+            "failures": {},
+            "startup_p50_seconds": 0.078569834,
+            "startup_p95_seconds": 0.103953125,
+            "startup_p99_seconds": 0.103953125,
+            "navigation_p95_seconds": 0.23935325,
+            "workers": {
+              "worker-a": {
+                "container_samples": 60,
+                "container_steady_samples": 57,
+                "peak_container_memory_bytes": 528179200,
+                "container_memory_limit_bytes": 4294967296,
+                "peak_swap_bytes": 0,
+                "container_cpu_limit_cores": 4,
+                "peak_cpu_utilization_fraction": 0.38403303956232454,
+                "steady_cpu_utilization_p95_fraction": 0.05135574449175862,
+                "steady_throttled_periods_p95_fraction": 0,
+                "peak_container_tasks": 281,
+                "container_task_limit": 2048,
+                "oom_events_during_test": 0,
+                "memory_limit_events_during_test": 0,
+                "task_limit_events_during_test": 0,
+                "container_samples_unhealthy": false,
+                "worker_id": "worker-a",
+                "peak_active_sessions": 2,
+                "peak_reserved_sessions": 2,
+                "peak_browser_rss_bytes": 2401337344,
+                "peak_service_rss_bytes": 31019008,
+                "peak_total_rss_bytes": 2428518400,
+                "peak_browser_processes": 22,
+                "fresh_memory_samples": 60,
+                "fresh_samples_at_target_concurrency": 60,
+                "unhealthy_or_missing_samples": false
+              }
+            },
+            "extraction_actions": 124,
+            "extraction_action_p95_seconds": 0.015013459,
+            "workload_sessions": {
+              "article": 2,
+              "dashboard": 2,
+              "feed": 2
+            },
+            "metrics_errors": 0,
+            "qualified": true
+          },
+          {
+            "concurrency": 4,
+            "attempted": 12,
+            "created": 12,
+            "completed": 12,
+            "failures": {},
+            "startup_p50_seconds": 0.161066375,
+            "startup_p95_seconds": 0.178829,
+            "startup_p99_seconds": 0.178829,
+            "navigation_p95_seconds": 0.692832,
+            "workers": {
+              "worker-a": {
+                "container_samples": 60,
+                "container_steady_samples": 57,
+                "peak_container_memory_bytes": 1004691456,
+                "container_memory_limit_bytes": 4294967296,
+                "peak_swap_bytes": 0,
+                "container_cpu_limit_cores": 4,
+                "peak_cpu_utilization_fraction": 0.5430320720493199,
+                "steady_cpu_utilization_p95_fraction": 0.13030599807393523,
+                "steady_throttled_periods_p95_fraction": 0,
+                "peak_container_tasks": 555,
+                "container_task_limit": 2048,
+                "oom_events_during_test": 0,
+                "memory_limit_events_during_test": 0,
+                "task_limit_events_during_test": 0,
+                "container_samples_unhealthy": false,
+                "worker_id": "worker-a",
+                "peak_active_sessions": 4,
+                "peak_reserved_sessions": 4,
+                "peak_browser_rss_bytes": 4771844096,
+                "peak_service_rss_bytes": 29184000,
+                "peak_total_rss_bytes": 4798877696,
+                "peak_browser_processes": 44,
+                "fresh_memory_samples": 60,
+                "fresh_samples_at_target_concurrency": 60,
+                "unhealthy_or_missing_samples": false
+              }
+            },
+            "extraction_actions": 248,
+            "extraction_action_p95_seconds": 0.018308791,
+            "workload_sessions": {
+              "article": 4,
+              "dashboard": 4,
+              "feed": 4
+            },
+            "metrics_errors": 0,
+            "qualified": true
+          },
+          {
+            "concurrency": 6,
+            "attempted": 18,
+            "created": 18,
+            "completed": 18,
+            "failures": {},
+            "startup_p50_seconds": 0.230014375,
+            "startup_p95_seconds": 0.33078275,
+            "startup_p99_seconds": 0.33078275,
+            "navigation_p95_seconds": 1.28268825,
+            "workers": {
+              "worker-a": {
+                "container_samples": 61,
+                "container_steady_samples": 55,
+                "peak_container_memory_bytes": 1484144640,
+                "container_memory_limit_bytes": 4294967296,
+                "peak_swap_bytes": 0,
+                "container_cpu_limit_cores": 4,
+                "peak_cpu_utilization_fraction": 1.0071119598828968,
+                "steady_cpu_utilization_p95_fraction": 0.1680672934635301,
+                "steady_throttled_periods_p95_fraction": 0,
+                "peak_container_tasks": 838,
+                "container_task_limit": 2048,
+                "oom_events_during_test": 0,
+                "memory_limit_events_during_test": 0,
+                "task_limit_events_during_test": 0,
+                "container_samples_unhealthy": false,
+                "worker_id": "worker-a",
+                "peak_active_sessions": 6,
+                "peak_reserved_sessions": 6,
+                "peak_browser_rss_bytes": 7198867456,
+                "peak_service_rss_bytes": 28925952,
+                "peak_total_rss_bytes": 7227428864,
+                "peak_browser_processes": 70,
+                "fresh_memory_samples": 63,
+                "fresh_samples_at_target_concurrency": 60,
+                "unhealthy_or_missing_samples": false
+              }
+            },
+            "extraction_actions": 372,
+            "extraction_action_p95_seconds": 0.023357333,
+            "workload_sessions": {
+              "article": 6,
+              "dashboard": 6,
+              "feed": 6
+            },
+            "metrics_errors": 0,
+            "qualified": true
+          },
+          {
+            "concurrency": 8,
+            "attempted": 24,
+            "created": 24,
+            "completed": 24,
+            "failures": {},
+            "startup_p50_seconds": 0.406037541,
+            "startup_p95_seconds": 0.606508292,
+            "startup_p99_seconds": 0.67419525,
+            "navigation_p95_seconds": 1.920373833,
+            "workers": {
+              "worker-a": {
+                "container_samples": 65,
+                "container_steady_samples": 57,
+                "peak_container_memory_bytes": 1977036800,
+                "container_memory_limit_bytes": 4294967296,
+                "peak_swap_bytes": 0,
+                "container_cpu_limit_cores": 4,
+                "peak_cpu_utilization_fraction": 1.0006217726811206,
+                "steady_cpu_utilization_p95_fraction": 0.18991609917326693,
+                "steady_throttled_periods_p95_fraction": 0,
+                "peak_container_tasks": 1099,
+                "container_task_limit": 2048,
+                "oom_events_during_test": 0,
+                "memory_limit_events_during_test": 0,
+                "task_limit_events_during_test": 0,
+                "container_samples_unhealthy": false,
+                "worker_id": "worker-a",
+                "peak_active_sessions": 8,
+                "peak_reserved_sessions": 8,
+                "peak_browser_rss_bytes": 9577684992,
+                "peak_service_rss_bytes": 27496448,
+                "peak_total_rss_bytes": 9605050368,
+                "peak_browser_processes": 91,
+                "fresh_memory_samples": 64,
+                "fresh_samples_at_target_concurrency": 60,
+                "unhealthy_or_missing_samples": false
+              }
+            },
+            "extraction_actions": 494,
+            "extraction_action_p95_seconds": 0.031868291,
+            "workload_sessions": {
+              "article": 8,
+              "dashboard": 8,
+              "feed": 8
+            },
+            "metrics_errors": 0,
+            "qualified": true
+          }
+        ],
+        "recommendations": [
+          {
+            "worker_id": "worker-a",
+            "highest_qualified_tested_sessions": 8,
+            "estimated_sessions_with_memory_headroom": 8,
+            "suggested_capacity_upper_bound": 8
+          }
+        ],
+        "notes": [
+          "Startup latency is client-observed POST /sessions latency for successful launches; worker histograms measure local CDP readiness.",
+          "RSS includes Chromium children in owned process groups; shared pages can be double-counted and short peaks between samples can be missed.",
+          "Unacknowledged launches after transport failure rely on worker cleanup or the server session TTL; known sessions are explicitly deleted.",
+          "Suggested capacity is capped at directly tested concurrency and depends on the workload, hardware, isolation, and supplied memory budget.",
+          "Use isolated workers and a dedicated test tenant; quotas remain enabled. Longer representative workloads and CPU/container measurements are required before production sizing."
+        ]
+      }
+    },
+    {
+      "name": "article-verify-6",
+      "report": {
+        "extraction_p95_threshold_seconds": 1,
+        "workload": "article",
+        "fixture_version": "mixed-scraping-v1",
+        "require_container_resources": true,
+        "worker_cpu_budget_cores": 4,
+        "cpu_utilization_p95_threshold": 0.8,
+        "throttled_periods_p95_threshold": 0.2,
+        "navigation_p95_threshold_seconds": 5,
+        "started_at": "2026-10-05T19:30:50.569749Z",
+        "duration_seconds": 64.779657458,
+        "rounds": 3,
+        "hold_seconds": 20,
+        "worker_memory_budget_bytes": 4294967296,
+        "memory_headroom_fraction": 0.3,
+        "startup_p95_threshold_seconds": 2,
+        "stages": [
+          {
+            "concurrency": 6,
+            "attempted": 18,
+            "created": 18,
+            "completed": 18,
+            "failures": {},
+            "startup_p50_seconds": 0.334366583,
+            "startup_p95_seconds": 0.412270583,
+            "startup_p99_seconds": 0.412270583,
+            "navigation_p95_seconds": 1.215471708,
+            "workers": {
+              "worker-a": {
+                "container_samples": 63,
+                "container_steady_samples": 57,
+                "peak_container_memory_bytes": 1336573952,
+                "container_memory_limit_bytes": 4294967296,
+                "peak_swap_bytes": 0,
+                "container_cpu_limit_cores": 4,
+                "peak_cpu_utilization_fraction": 1.0016857966976849,
+                "steady_cpu_utilization_p95_fraction": 0.13749967796320878,
+                "steady_throttled_periods_p95_fraction": 0,
+                "peak_container_tasks": 834,
+                "container_task_limit": 2048,
+                "oom_events_during_test": 0,
+                "memory_limit_events_during_test": 0,
+                "task_limit_events_during_test": 0,
+                "container_samples_unhealthy": false,
+                "worker_id": "worker-a",
+                "peak_active_sessions": 6,
+                "peak_reserved_sessions": 6,
+                "peak_browser_rss_bytes": 7005184000,
+                "peak_service_rss_bytes": 27758592,
+                "peak_total_rss_bytes": 7031296000,
+                "peak_browser_processes": 66,
+                "fresh_memory_samples": 63,
+                "fresh_samples_at_target_concurrency": 60,
+                "unhealthy_or_missing_samples": false
+              }
+            },
+            "extraction_actions": 372,
+            "extraction_action_p95_seconds": 0.01874825,
+            "workload_sessions": {
+              "article": 18
+            },
+            "metrics_errors": 0,
+            "qualified": true
+          }
+        ],
+        "recommendations": [
+          {
+            "worker_id": "worker-a",
+            "highest_qualified_tested_sessions": 6,
+            "estimated_sessions_with_memory_headroom": 6,
+            "suggested_capacity_upper_bound": 6
+          }
+        ],
+        "notes": [
+          "Startup latency is client-observed POST /sessions latency for successful launches; worker histograms measure local CDP readiness.",
+          "RSS includes Chromium children in owned process groups; shared pages can be double-counted and short peaks between samples can be missed.",
+          "Unacknowledged launches after transport failure rely on worker cleanup or the server session TTL; known sessions are explicitly deleted.",
+          "Suggested capacity is capped at directly tested concurrency and depends on the workload, hardware, isolation, and supplied memory budget.",
+          "Use isolated workers and a dedicated test tenant; quotas remain enabled. Replay customer workloads and measure sustained behavior on target production hardware before production sizing."
+        ]
+      }
+    },
+    {
+      "name": "feed-verify-6",
+      "report": {
+        "extraction_p95_threshold_seconds": 1,
+        "workload": "feed",
+        "fixture_version": "mixed-scraping-v1",
+        "require_container_resources": true,
+        "worker_cpu_budget_cores": 4,
+        "cpu_utilization_p95_threshold": 0.8,
+        "throttled_periods_p95_threshold": 0.2,
+        "navigation_p95_threshold_seconds": 5,
+        "started_at": "2026-10-05T19:32:03.90121Z",
+        "duration_seconds": 64.406431125,
+        "rounds": 3,
+        "hold_seconds": 20,
+        "worker_memory_budget_bytes": 4294967296,
+        "memory_headroom_fraction": 0.3,
+        "startup_p95_threshold_seconds": 2,
+        "stages": [
+          {
+            "concurrency": 6,
+            "attempted": 18,
+            "created": 18,
+            "completed": 18,
+            "failures": {},
+            "startup_p50_seconds": 0.283585583,
+            "startup_p95_seconds": 0.487096375,
+            "startup_p99_seconds": 0.487096375,
+            "navigation_p95_seconds": 1.187593625,
+            "workers": {
+              "worker-a": {
+                "container_samples": 63,
+                "container_steady_samples": 57,
+                "peak_container_memory_bytes": 1560637440,
+                "container_memory_limit_bytes": 4294967296,
+                "peak_swap_bytes": 0,
+                "container_cpu_limit_cores": 4,
+                "peak_cpu_utilization_fraction": 1.0011941390981918,
+                "steady_cpu_utilization_p95_fraction": 0.11925912733703792,
+                "steady_throttled_periods_p95_fraction": 0,
+                "peak_container_tasks": 816,
+                "container_task_limit": 2048,
+                "oom_events_during_test": 0,
+                "memory_limit_events_during_test": 0,
+                "task_limit_events_during_test": 0,
+                "container_samples_unhealthy": false,
+                "worker_id": "worker-a",
+                "peak_active_sessions": 6,
+                "peak_reserved_sessions": 6,
+                "peak_browser_rss_bytes": 7219970048,
+                "peak_service_rss_bytes": 30175232,
+                "peak_total_rss_bytes": 7248379904,
+                "peak_browser_processes": 66,
+                "fresh_memory_samples": 63,
+                "fresh_samples_at_target_concurrency": 60,
+                "unhealthy_or_missing_samples": false
+              }
+            },
+            "extraction_actions": 375,
+            "extraction_action_p95_seconds": 0.02409175,
+            "workload_sessions": {
+              "feed": 18
+            },
+            "metrics_errors": 0,
+            "qualified": true
+          }
+        ],
+        "recommendations": [
+          {
+            "worker_id": "worker-a",
+            "highest_qualified_tested_sessions": 6,
+            "estimated_sessions_with_memory_headroom": 6,
+            "suggested_capacity_upper_bound": 6
+          }
+        ],
+        "notes": [
+          "Startup latency is client-observed POST /sessions latency for successful launches; worker histograms measure local CDP readiness.",
+          "RSS includes Chromium children in owned process groups; shared pages can be double-counted and short peaks between samples can be missed.",
+          "Unacknowledged launches after transport failure rely on worker cleanup or the server session TTL; known sessions are explicitly deleted.",
+          "Suggested capacity is capped at directly tested concurrency and depends on the workload, hardware, isolation, and supplied memory budget.",
+          "Use isolated workers and a dedicated test tenant; quotas remain enabled. Replay customer workloads and measure sustained behavior on target production hardware before production sizing."
+        ]
+      }
+    },
+    {
+      "name": "dashboard-verify-6",
+      "report": {
+        "extraction_p95_threshold_seconds": 1,
+        "workload": "dashboard",
+        "fixture_version": "mixed-scraping-v1",
+        "require_container_resources": true,
+        "worker_cpu_budget_cores": 4,
+        "cpu_utilization_p95_threshold": 0.8,
+        "throttled_periods_p95_threshold": 0.2,
+        "navigation_p95_threshold_seconds": 5,
+        "started_at": "2026-10-05T19:33:16.835555Z",
+        "duration_seconds": 65.004392917,
+        "rounds": 3,
+        "hold_seconds": 20,
+        "worker_memory_budget_bytes": 4294967296,
+        "memory_headroom_fraction": 0.3,
+        "startup_p95_threshold_seconds": 2,
+        "stages": [
+          {
+            "concurrency": 6,
+            "attempted": 18,
+            "created": 18,
+            "completed": 18,
+            "failures": {},
+            "startup_p50_seconds": 0.364610666,
+            "startup_p95_seconds": 0.455653042,
+            "startup_p99_seconds": 0.455653042,
+            "navigation_p95_seconds": 1.290159625,
+            "workers": {
+              "worker-a": {
+                "container_samples": 63,
+                "container_steady_samples": 57,
+                "peak_container_memory_bytes": 1571618816,
+                "container_memory_limit_bytes": 4294967296,
+                "peak_swap_bytes": 0,
+                "container_cpu_limit_cores": 4,
+                "peak_cpu_utilization_fraction": 1.0152854309758192,
+                "steady_cpu_utilization_p95_fraction": 0.1588794112819154,
+                "steady_throttled_periods_p95_fraction": 0.1,
+                "peak_container_tasks": 812,
+                "container_task_limit": 2048,
+                "oom_events_during_test": 0,
+                "memory_limit_events_during_test": 0,
+                "task_limit_events_during_test": 0,
+                "container_samples_unhealthy": false,
+                "worker_id": "worker-a",
+                "peak_active_sessions": 6,
+                "peak_reserved_sessions": 6,
+                "peak_browser_rss_bytes": 7283621888,
+                "peak_service_rss_bytes": 29601792,
+                "peak_total_rss_bytes": 7309352960,
+                "peak_browser_processes": 66,
+                "fresh_memory_samples": 63,
+                "fresh_samples_at_target_concurrency": 60,
+                "unhealthy_or_missing_samples": false
+              }
+            },
+            "extraction_actions": 371,
+            "extraction_action_p95_seconds": 0.019342792,
+            "workload_sessions": {
+              "dashboard": 18
+            },
+            "metrics_errors": 0,
+            "qualified": true
+          }
+        ],
+        "recommendations": [
+          {
+            "worker_id": "worker-a",
+            "highest_qualified_tested_sessions": 6,
+            "estimated_sessions_with_memory_headroom": 6,
+            "suggested_capacity_upper_bound": 6
+          }
+        ],
+        "notes": [
+          "Startup latency is client-observed POST /sessions latency for successful launches; worker histograms measure local CDP readiness.",
+          "RSS includes Chromium children in owned process groups; shared pages can be double-counted and short peaks between samples can be missed.",
+          "Unacknowledged launches after transport failure rely on worker cleanup or the server session TTL; known sessions are explicitly deleted.",
+          "Suggested capacity is capped at directly tested concurrency and depends on the workload, hardware, isolation, and supplied memory budget.",
+          "Use isolated workers and a dedicated test tenant; quotas remain enabled. Replay customer workloads and measure sustained behavior on target production hardware before production sizing."
+        ]
+      }
+    },
+    {
+      "name": "mixed-soak-6",
+      "report": {
+        "extraction_p95_threshold_seconds": 1,
+        "workload": "mixed",
+        "fixture_version": "mixed-scraping-v1",
+        "require_container_resources": true,
+        "worker_cpu_budget_cores": 4,
+        "cpu_utilization_p95_threshold": 0.8,
+        "throttled_periods_p95_threshold": 0.2,
+        "navigation_p95_threshold_seconds": 5,
+        "started_at": "2026-10-05T19:34:30.398895Z",
+        "duration_seconds": 184.748510917,
+        "rounds": 3,
+        "hold_seconds": 60,
+        "worker_memory_budget_bytes": 4294967296,
+        "memory_headroom_fraction": 0.3,
+        "startup_p95_threshold_seconds": 2,
+        "stages": [
+          {
+            "concurrency": 6,
+            "attempted": 18,
+            "created": 18,
+            "completed": 18,
+            "failures": {},
+            "startup_p50_seconds": 0.345052792,
+            "startup_p95_seconds": 0.456203167,
+            "startup_p99_seconds": 0.456203167,
+            "navigation_p95_seconds": 1.217879959,
+            "workers": {
+              "worker-a": {
+                "container_samples": 183,
+                "container_steady_samples": 177,
+                "peak_container_memory_bytes": 1508835328,
+                "container_memory_limit_bytes": 4294967296,
+                "peak_swap_bytes": 0,
+                "container_cpu_limit_cores": 4,
+                "peak_cpu_utilization_fraction": 0.9927596690466984,
+                "steady_cpu_utilization_p95_fraction": 0.1378291004697857,
+                "steady_throttled_periods_p95_fraction": 0,
+                "peak_container_tasks": 826,
+                "container_task_limit": 2048,
+                "oom_events_during_test": 0,
+                "memory_limit_events_during_test": 0,
+                "task_limit_events_during_test": 0,
+                "container_samples_unhealthy": false,
+                "worker_id": "worker-a",
+                "peak_active_sessions": 6,
+                "peak_reserved_sessions": 6,
+                "peak_browser_rss_bytes": 7177744384,
+                "peak_service_rss_bytes": 30863360,
+                "peak_total_rss_bytes": 7204970496,
+                "peak_browser_processes": 66,
+                "fresh_memory_samples": 183,
+                "fresh_samples_at_target_concurrency": 180,
+                "unhealthy_or_missing_samples": false
+              }
+            },
+            "extraction_actions": 1092,
+            "extraction_action_p95_seconds": 0.021575833,
+            "workload_sessions": {
+              "article": 6,
+              "dashboard": 6,
+              "feed": 6
+            },
+            "metrics_errors": 0,
+            "qualified": true
+          }
+        ],
+        "recommendations": [
+          {
+            "worker_id": "worker-a",
+            "highest_qualified_tested_sessions": 6,
+            "estimated_sessions_with_memory_headroom": 6,
+            "suggested_capacity_upper_bound": 6
+          }
+        ],
+        "notes": [
+          "Startup latency is client-observed POST /sessions latency for successful launches; worker histograms measure local CDP readiness.",
+          "RSS includes Chromium children in owned process groups; shared pages can be double-counted and short peaks between samples can be missed.",
+          "Unacknowledged launches after transport failure rely on worker cleanup or the server session TTL; known sessions are explicitly deleted.",
+          "Suggested capacity is capped at directly tested concurrency and depends on the workload, hardware, isolation, and supplied memory budget.",
+          "Use isolated workers and a dedicated test tenant; quotas remain enabled. Replay customer workloads and measure sustained behavior on target production hardware before production sizing."
+        ]
+      }
+    },
+    {
+      "name": "mixed-churn-6",
+      "report": {
+        "extraction_p95_threshold_seconds": 1,
+        "workload": "mixed",
+        "fixture_version": "mixed-scraping-v1",
+        "require_container_resources": true,
+        "worker_cpu_budget_cores": 4,
+        "cpu_utilization_p95_threshold": 0.8,
+        "throttled_periods_p95_threshold": 0.2,
+        "navigation_p95_threshold_seconds": 5,
+        "started_at": "2026-10-05T19:37:43.739059Z",
+        "duration_seconds": 94.785969916,
+        "rounds": 15,
+        "hold_seconds": 5,
+        "worker_memory_budget_bytes": 4294967296,
+        "memory_headroom_fraction": 0.3,
+        "startup_p95_threshold_seconds": 2,
+        "stages": [
+          {
+            "concurrency": 6,
+            "attempted": 90,
+            "created": 90,
+            "completed": 90,
+            "failures": {},
+            "startup_p50_seconds": 0.228779416,
+            "startup_p95_seconds": 0.341804833,
+            "startup_p99_seconds": 0.362155041,
+            "navigation_p95_seconds": 1.097785542,
+            "workers": {
+              "worker-a": {
+                "container_samples": 90,
+                "container_steady_samples": 60,
+                "peak_container_memory_bytes": 1434017792,
+                "container_memory_limit_bytes": 4294967296,
+                "peak_swap_bytes": 0,
+                "container_cpu_limit_cores": 4,
+                "peak_cpu_utilization_fraction": 1.0111311701415846,
+                "steady_cpu_utilization_p95_fraction": 0.23082012533752846,
+                "steady_throttled_periods_p95_fraction": 0.2,
+                "peak_container_tasks": 828,
+                "container_task_limit": 2048,
+                "oom_events_during_test": 0,
+                "memory_limit_events_during_test": 0,
+                "task_limit_events_during_test": 0,
+                "container_samples_unhealthy": false,
+                "worker_id": "worker-a",
+                "peak_active_sessions": 6,
+                "peak_reserved_sessions": 6,
+                "peak_browser_rss_bytes": 7104532480,
+                "peak_service_rss_bytes": 31109120,
+                "peak_total_rss_bytes": 7128432640,
+                "peak_browser_processes": 66,
+                "fresh_memory_samples": 90,
+                "fresh_samples_at_target_concurrency": 75,
+                "unhealthy_or_missing_samples": false
+              }
+            },
+            "extraction_actions": 538,
+            "extraction_action_p95_seconds": 0.052404083,
+            "workload_sessions": {
+              "article": 30,
+              "dashboard": 30,
+              "feed": 30
+            },
+            "metrics_errors": 0,
+            "qualified": true
+          }
+        ],
+        "recommendations": [
+          {
+            "worker_id": "worker-a",
+            "highest_qualified_tested_sessions": 6,
+            "estimated_sessions_with_memory_headroom": 6,
+            "suggested_capacity_upper_bound": 6
+          }
+        ],
+        "notes": [
+          "Startup latency is client-observed POST /sessions latency for successful launches; worker histograms measure local CDP readiness.",
+          "RSS includes Chromium children in owned process groups; shared pages can be double-counted and short peaks between samples can be missed.",
+          "Unacknowledged launches after transport failure rely on worker cleanup or the server session TTL; known sessions are explicitly deleted.",
+          "Suggested capacity is capped at directly tested concurrency and depends on the workload, hardware, isolation, and supplied memory budget.",
+          "Use isolated workers and a dedicated test tenant; quotas remain enabled. Replay customer workloads and measure sustained behavior on target production hardware before production sizing."
+        ]
+      }
+    }
+  ],
+  "scope": "Controlled mixed scraping fixtures on this Docker host. Repeat with real customer workloads on the target production hardware.",
+  "image_ids": {
+    "api": "sha256:1c5fab3b065df46ec2a9d45702cac91a9eb5312662f711b894af1d8dabc73c72",
+    "worker-a": "sha256:bbcea794467b43a35602f376b0327b11d3edcb8bc635d0215fd5768e9b4d3234",
+    "fixtures": "sha256:a9a27bc7a411f1d81245901239922f88573662373d9ac98fdf63f3bd3bca2fab"
+  }
+}

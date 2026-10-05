@@ -11,5 +11,7 @@ capabilities otherwise removes the upstream conditional `chroot` rule. No host
 SYS_CHROOT capability is added. Workers run as a non-root user with dropped container capabilities, no added SYS_ADMIN, and
 no `--no-sandbox` flag. The Docker host must support unprivileged user namespaces.
 Each worker has its own 512 MiB shared-memory mount and PID namespace, an init
-process to reap children, and a configurable memory limit. The example 4 GiB limit
-and two slots are development settings; use workload measurements to size workers.
+process to reap children, and a configurable memory limit. The default 4 CPU / 4 GiB limit
+and six slots use the controlled workload baseline in [worker sizing](../docs/capacity.md).
+The container also disables swap and bounds tasks to 2,048. Repeat measurements
+on the target production hardware with customer workloads.
