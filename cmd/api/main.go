@@ -39,19 +39,16 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 	defer pool.Close()
-	service, err := auth.NewService(postgres.NewRepository(pool), cfg.APIKeyPepper)
+	repository := postgres.NewRepository(pool)
+	service, err := auth.NewService(repository, cfg.APIKeyPepper)
 	if err != nil {
 		return err
 	}
-	accounts, err := auth.NewAccountService(postgres.NewRepository(pool), cfg.APIKeyPepper, cfg.SessionTTL)
+	accounts, err := auth.NewAccountService(repository, cfg.APIKeyPepper, cfg.SessionTTL)
 	if err != nil {
 		return err
 	}
-	ready := func(ctx context.Context) error {
-		// Check the schema as well as connectivity. Migrations run separately.
-		_, err := pool.Exec(ctx, `SELECT k.id, u.id, s.id FROM api_keys k, users u, auth_sessions s LIMIT 0`)
-		return err
-	}
+	ready := repository.Ready
 	startup, cancel = context.WithTimeout(ctx, 5*time.Second)
 	err = ready(startup)
 	cancel()

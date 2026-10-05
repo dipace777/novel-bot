@@ -3,6 +3,7 @@ package api
 
 import "embed"
 
+//go:embed openapi.json
 var Specification []byte
 
 //go:embed swagger-ui/*

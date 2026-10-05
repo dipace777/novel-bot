@@ -1,0 +1,23 @@
+version: "2"
+sql:
+  - engine: "postgresql"
+    schema: "migrations/*.up.sql"
+    queries: "internal/storage/postgres/queries"
+    gen:
+      go:
+        package: "dbgen"
+        out: "internal/storage/postgres/dbgen"
+        sql_package: "pgx/v5"
+        emit_interface: true
+        emit_empty_slices: true
+        overrides:
+          - db_type: "timestamptz"
+            go_type:
+              import: "time"
+              type: "Time"
+          - db_type: "timestamptz"
+            nullable: true
+            go_type:
+              import: "time"
+              type: "Time"
+              pointer: true

@@ -70,7 +70,11 @@ func TestPostgresAuthenticationIntegration(t *testing.T) {
 	if err := migrations.Apply(ctx, pool); err != nil {
 		t.Fatalf("repeat migrations: %v", err)
 	}
-	service, err := auth.NewService(postgres.NewRepository(pool), []byte(strings.Repeat("p", 32)))
+	repository := postgres.NewRepository(pool)
+	if err := repository.Ready(ctx); err != nil {
+		t.Fatalf("schema readiness: %v", err)
+	}
+	service, err := auth.NewService(repository, []byte(strings.Repeat("p", 32)))
 	if err != nil {
 		t.Fatal(err)
 	}

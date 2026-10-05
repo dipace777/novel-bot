@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"novel-bot/internal/auth"
+	"novel-bot/internal/storage/postgres/dbgen"
 )
 
 var _ auth.AccountRepository = (*Repository)(nil)
@@ -18,10 +19,14 @@ func (r *Repository) CreateAccount(ctx context.Context, user auth.User, client a
 		return err
 	}
 	defer tx.Rollback(context.Background())
-	if _, err := tx.Exec(ctx, `INSERT INTO clients (id, name, created_at) VALUES ($1, $2, $3)`, client.ID, client.Name, client.CreatedAt); err != nil {
+	queries := r.queries.WithTx(tx)
+	if err := queries.CreateClient(ctx, clientParams(client)); err != nil {
 		return err
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO users (id, client_id, name, email, password_hash, created_at) VALUES ($1, $2, $3, $4, $5, $6)`, user.ID, user.ClientID, user.Name, user.Email, user.PasswordHash, user.CreatedAt)
+	err = queries.CreateUser(ctx, dbgen.CreateUserParams{
+		ID: user.ID, ClientID: user.ClientID, Name: user.Name, Email: user.Email,
+		PasswordHash: user.PasswordHash, CreatedAt: user.CreatedAt,
+	})
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "users_email_key" {
 		return auth.ErrConflict
@@ -33,35 +38,51 @@ func (r *Repository) CreateAccount(ctx context.Context, user auth.User, client a
 }
 
 func (r *Repository) FindUserByEmail(ctx context.Context, email string) (auth.User, error) {
-	var user auth.User
-	err := r.pool.QueryRow(ctx, `SELECT id, client_id, name, email, password_hash, created_at FROM users WHERE email = $1`, email).Scan(&user.ID, &user.ClientID, &user.Name, &user.Email, &user.PasswordHash, &user.CreatedAt)
+	user, err := r.queries.FindUserByEmail(ctx, email)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return auth.User{}, auth.ErrNotFound
 	}
-	return user, err
+	if err != nil {
+		return auth.User{}, err
+	}
+	return auth.User{
+		ID: user.ID, ClientID: user.ClientID, Name: user.Name, Email: user.Email,
+		PasswordHash: user.PasswordHash, CreatedAt: user.CreatedAt,
+	}, nil
 }
 
 func (r *Repository) CreateSession(ctx context.Context, session auth.Session) error {
-	_, err := r.pool.Exec(ctx, `INSERT INTO auth_sessions (id, user_id, digest, created_at, expires_at) VALUES ($1, $2, $3, $4, $5)`, session.ID, session.UserID, session.Digest, session.CreatedAt, session.ExpiresAt)
-	return err
+	return r.queries.CreateSession(ctx, dbgen.CreateSessionParams{
+		ID: session.ID, UserID: session.UserID, Digest: session.Digest,
+		CreatedAt: session.CreatedAt, ExpiresAt: session.ExpiresAt,
+	})
 }
 
 func (r *Repository) FindSession(ctx context.Context, id string) (auth.Session, auth.User, error) {
-	var session auth.Session
-	var user auth.User
-	err := r.pool.QueryRow(ctx, `SELECT s.id, s.user_id, s.digest, s.created_at, s.expires_at, s.revoked_at, u.id, u.client_id, u.name, u.email, u.created_at FROM auth_sessions s JOIN users u ON u.id = s.user_id WHERE s.id = $1`, id).Scan(&session.ID, &session.UserID, &session.Digest, &session.CreatedAt, &session.ExpiresAt, &session.RevokedAt, &user.ID, &user.ClientID, &user.Name, &user.Email, &user.CreatedAt)
+	row, err := r.queries.FindSession(ctx, id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return auth.Session{}, auth.User{}, auth.ErrNotFound
 	}
-	return session, user, err
+	if err != nil {
+		return auth.Session{}, auth.User{}, err
+	}
+	session := auth.Session{
+		ID: row.SessionID, UserID: row.UserID, Digest: row.Digest,
+		CreatedAt: row.SessionCreatedAt, ExpiresAt: row.ExpiresAt, RevokedAt: row.RevokedAt,
+	}
+	user := auth.User{
+		ID: row.UserID, ClientID: row.ClientID, Name: row.Name, Email: row.Email,
+		CreatedAt: row.UserCreatedAt,
+	}
+	return session, user, nil
 }
 
 func (r *Repository) RevokeSession(ctx context.Context, userID, id string, now time.Time) error {
-	result, err := r.pool.Exec(ctx, `UPDATE auth_sessions SET revoked_at = COALESCE(revoked_at, $3) WHERE id = $1 AND user_id = $2`, id, userID, now)
+	count, err := r.queries.RevokeSession(ctx, dbgen.RevokeSessionParams{ID: id, UserID: userID, RevokedAt: now})
 	if err != nil {
 		return err
 	}
-	if result.RowsAffected() == 0 {
+	if count == 0 {
 		return auth.ErrNotFound
 	}
 	return nil

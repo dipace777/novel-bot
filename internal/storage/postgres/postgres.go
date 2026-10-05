@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"novel-bot/internal/auth"
+	"novel-bot/internal/storage/postgres/dbgen"
 )
 
 func Open(ctx context.Context, url string, maxConns int32) (*pgxpool.Pool, error) {
@@ -34,19 +35,26 @@ func Open(ctx context.Context, url string, maxConns int32) (*pgxpool.Pool, error
 	return pool, nil
 }
 
-type Repository struct{ pool *pgxpool.Pool }
+type Repository struct {
+	pool    *pgxpool.Pool
+	queries *dbgen.Queries
+}
 
-func NewRepository(pool *pgxpool.Pool) *Repository { return &Repository{pool: pool} }
+func NewRepository(pool *pgxpool.Pool) *Repository {
+	return &Repository{pool: pool, queries: dbgen.New(pool)}
+}
 
 var _ auth.Repository = (*Repository)(nil)
 
 func (r *Repository) CreateClient(ctx context.Context, client auth.Client) error {
-	_, err := r.pool.Exec(ctx, `INSERT INTO clients (id, name, created_at) VALUES ($1, $2, $3)`, client.ID, client.Name, client.CreatedAt)
-	return err
+	return r.queries.CreateClient(ctx, clientParams(client))
 }
 
 func (r *Repository) CreateKey(ctx context.Context, key auth.Key) error {
-	_, err := r.pool.Exec(ctx, `INSERT INTO api_keys (id, client_id, name, digest, created_at, expires_at) VALUES ($1, $2, $3, $4, $5, $6)`, key.ID, key.ClientID, key.Name, key.Digest, key.CreatedAt, key.ExpiresAt)
+	err := r.queries.CreateAPIKey(ctx, dbgen.CreateAPIKeyParams{
+		ID: key.ID, ClientID: key.ClientID, Name: key.Name, Digest: key.Digest,
+		CreatedAt: key.CreatedAt, ExpiresAt: key.ExpiresAt,
+	})
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == "23503" {
 		return auth.ErrNotFound
@@ -55,38 +63,50 @@ func (r *Repository) CreateKey(ctx context.Context, key auth.Key) error {
 }
 
 func (r *Repository) FindKey(ctx context.Context, id string) (auth.Key, error) {
-	var key auth.Key
-	err := r.pool.QueryRow(ctx, `SELECT id, client_id, name, digest, created_at, expires_at, revoked_at FROM api_keys WHERE id = $1`, id).Scan(&key.ID, &key.ClientID, &key.Name, &key.Digest, &key.CreatedAt, &key.ExpiresAt, &key.RevokedAt)
+	key, err := r.queries.FindAPIKey(ctx, id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return auth.Key{}, auth.ErrNotFound
 	}
-	return key, err
+	if err != nil {
+		return auth.Key{}, err
+	}
+	return auth.Key{
+		ID: key.ID, ClientID: key.ClientID, Name: key.Name, Digest: key.Digest,
+		CreatedAt: key.CreatedAt, ExpiresAt: key.ExpiresAt, RevokedAt: key.RevokedAt,
+	}, nil
 }
 
 func (r *Repository) ListKeys(ctx context.Context, clientID string) ([]auth.Key, error) {
-	rows, err := r.pool.Query(ctx, `SELECT id, client_id, name, created_at, expires_at, revoked_at FROM api_keys WHERE client_id = $1 ORDER BY created_at DESC, id`, clientID)
+	rows, err := r.queries.ListAPIKeys(ctx, clientID)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	keys := make([]auth.Key, 0)
-	for rows.Next() {
-		var key auth.Key
-		if err := rows.Scan(&key.ID, &key.ClientID, &key.Name, &key.CreatedAt, &key.ExpiresAt, &key.RevokedAt); err != nil {
-			return nil, err
-		}
-		keys = append(keys, key)
+	keys := make([]auth.Key, 0, len(rows))
+	for _, key := range rows {
+		keys = append(keys, auth.Key{
+			ID: key.ID, ClientID: key.ClientID, Name: key.Name,
+			CreatedAt: key.CreatedAt, ExpiresAt: key.ExpiresAt, RevokedAt: key.RevokedAt,
+		})
 	}
-	return keys, rows.Err()
+	return keys, nil
 }
 
 func (r *Repository) RevokeKey(ctx context.Context, clientID, id string, now time.Time) error {
-	result, err := r.pool.Exec(ctx, `UPDATE api_keys SET revoked_at = COALESCE(revoked_at, $3) WHERE id = $1 AND client_id = $2`, id, clientID, now)
+	count, err := r.queries.RevokeAPIKey(ctx, dbgen.RevokeAPIKeyParams{ID: id, ClientID: clientID, RevokedAt: now})
 	if err != nil {
 		return err
 	}
-	if result.RowsAffected() == 0 {
+	if count == 0 {
 		return auth.ErrNotFound
 	}
 	return nil
+}
+
+// Ready checks connectivity, schema availability, and required read permissions.
+func (r *Repository) Ready(ctx context.Context) error {
+	return r.queries.CheckAuthSchema(ctx)
+}
+
+func clientParams(client auth.Client) dbgen.CreateClientParams {
+	return dbgen.CreateClientParams{ID: client.ID, Name: client.Name, CreatedAt: client.CreatedAt}
 }

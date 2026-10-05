@@ -14,7 +14,10 @@ internal/
   auth/                Accounts, login sessions, API keys, repository contracts
   config/              Environment configuration and validation
   httpapi/             REST routes, validation, authentication middleware
-  storage/postgres/    Connection pool and persistence
+  storage/postgres/    Repository adapters and connection pool
+    queries/           Handwritten SQL query definitions
+    dbgen/             sqlc-generated Go query methods and database models
+sqlc.yaml              Query generation configuration
 migrations/            Embedded, ordered, checksummed SQL migrations
 api/                   OpenAPI contract and bundled Swagger UI
 .vscode/settings.json  Go module proxy configuration for the editor
@@ -229,6 +232,32 @@ Thousands of browser sessions require a separate execution layer: a queue,
 resource-limited workers, tenant authorization, leases, quotas, observability, and
 workload admission. Long-lived browser/WebSocket traffic needs different transport
 timeouts. This project has not been load-tested for thousands of browser sessions.
+
+## SQL query workflow
+
+The PostgreSQL repositories use [sqlc](https://github.com/sqlc-dev/sqlc) with
+`pgx/v5`. Application SQL lives in `internal/storage/postgres/queries/`; generated
+Go methods and models live in `internal/storage/postgres/dbgen/`. The repositories
+map generated models into authentication domain types, keeping database details
+and sensitive fields out of HTTP responses. Registration binds generated queries
+to its transaction with `WithTx` so client/user creation remains atomic.
+
+```sh
+make tools       # Install pinned sqlc v1.31.1 into ./bin if needed
+make generate    # Generate Go from migrations and named SQL queries
+make sqlc-check  # Compile queries and detect stale generated code
+```
+
+Add or edit a named query in `queries/*.sql`, then run `make generate` and tests.
+For schema changes, add a new numbered `migrations/*.up.sql` file first; sqlc uses
+these same migration files as its schema input, excluding down migrations. It does
+not apply schema changes: use `make migrate` separately. SQL generation needs no
+running database and does not use a cloud service.
+
+Commit generated Go files with the query changes. Do not edit `dbgen/*.go` by hand.
+Normal builds and tests use those files directly, so sqlc is a development tool
+and adds no runtime dependency. Migration bootstrap SQL and integration-test
+fixture SQL remain in their respective migration/test code.
 
 ## Tests and migrations
 
