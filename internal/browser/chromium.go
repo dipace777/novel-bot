@@ -22,6 +22,8 @@ import (
 type Chromium struct {
 	path       string
 	profileDir string
+	mu         sync.Mutex
+	groups     map[int]struct{}
 }
 
 // NewChromium accepts an executable or discovers Chromium/Chrome on PATH/macOS.
@@ -34,7 +36,7 @@ func NewChromium(path, profileDir string) (*Chromium, error) {
 	for _, candidate := range candidates {
 		resolved, err := exec.LookPath(candidate)
 		if err == nil {
-			return &Chromium{path: resolved, profileDir: profileDir}, nil
+			return &Chromium{path: resolved, profileDir: profileDir, groups: make(map[int]struct{})}, nil
 		}
 	}
 	return nil, errors.New("Chromium executable not found; install Chromium/Chrome or set CHROMIUM_PATH")
@@ -59,11 +61,17 @@ func (c *Chromium) Launch(ctx context.Context) (sessions.Browser, error) {
 		_ = os.RemoveAll(profile)
 		return nil, fmt.Errorf("start Chromium: %w", err)
 	}
+	c.mu.Lock()
+	c.groups[cmd.Process.Pid] = struct{}{}
+	c.mu.Unlock()
 	p := &process{cmd: cmd, done: make(chan struct{})}
 	go func() {
 		_ = cmd.Wait()
 		p.killOnce.Do(func() { p.killErr = killProcess(cmd) })
 		p.cleanupErr = os.RemoveAll(profile)
+		c.mu.Lock()
+		delete(c.groups, cmd.Process.Pid)
+		c.mu.Unlock()
 		close(p.done)
 	}()
 	ready := false
@@ -132,4 +140,16 @@ func (p *process) Stop(ctx context.Context) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+// ProcessGroups includes launching and stopping browsers until they are reaped.
+// On Unix, each browser is launched with its PID as the process-group ID.
+func (c *Chromium) ProcessGroups() []int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	ids := make([]int, 0, len(c.groups))
+	for id := range c.groups {
+		ids = append(ids, id)
+	}
+	return ids
 }

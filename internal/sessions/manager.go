@@ -8,7 +8,14 @@ import (
 	"time"
 )
 
+// Observer reports bounded lifecycle events without coupling sessions to an exporter.
+type Observer interface {
+	ObserveLaunch(time.Duration, error)
+	Event(string)
+}
+
 type Options struct {
+	Observer       Observer
 	MaxSessions    int
 	TTL            time.Duration
 	StartupTimeout time.Duration
@@ -108,7 +115,11 @@ func (m *Manager) CreateWithTTL(ctx context.Context, clientID, id string, ttl ti
 	stopShutdown := context.AfterFunc(m.ctx, cancel)
 	defer stopShutdown()
 	defer cancel()
+	started := time.Now()
 	browser, err := m.launcher.Launch(launchCtx)
+	if m.options.Observer != nil {
+		m.options.Observer.ObserveLaunch(time.Since(started), err)
+	}
 	if err != nil {
 		return Session{}, fmt.Errorf("launch browser: %w", err)
 	}
@@ -193,6 +204,9 @@ func (m *Manager) remove(s *managedSession) {
 		m.reserved--
 	}
 	m.mu.Unlock()
+	if removed && m.options.Observer != nil {
+		m.options.Observer.Event("session_stopped")
+	}
 	if removed && m.options.OnStop != nil {
 		m.options.OnStop(s.Session)
 	}
@@ -218,4 +232,12 @@ func stopBrowser(browser Browser) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = browser.Stop(ctx)
+}
+
+type Stats struct{ Capacity, Reserved, Starting, Active int }
+
+func (m *Manager) Stats() Stats {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return Stats{Capacity: m.options.MaxSessions, Reserved: m.reserved, Starting: len(m.starting), Active: len(m.sessions)}
 }

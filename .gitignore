@@ -5,3 +5,6 @@
 /coverage.out
 *.test
 .DS_Store
+
+/loadtest-report.json
+/loadtest-results/

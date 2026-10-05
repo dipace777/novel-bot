@@ -20,8 +20,11 @@ type WorkerService interface {
 }
 
 // NewWorkerRouter is served on a separate private listener, never the public API.
-func NewWorkerRouter(agent WorkerService, token string, logger *slog.Logger) http.Handler {
+func NewWorkerRouter(agent WorkerService, token string, logger *slog.Logger, metricHandlers ...http.Handler) http.Handler {
 	mux := http.NewServeMux()
+	if len(metricHandlers) > 0 && metricHandlers[0] != nil {
+		mux.Handle("/metrics", getOnly(func(w http.ResponseWriter, r *http.Request) { metricHandlers[0].ServeHTTP(w, r) }))
+	}
 	h := sessionHandlers{manager: workerLocal{agent}, logger: logger}
 	mux.Handle("/internal/sessions", methodOnly(http.MethodPost, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
@@ -57,6 +60,12 @@ func NewWorkerRouter(agent WorkerService, token string, logger *slog.Logger) htt
 	protected := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if len(token) < 32 || len(r.Header.Values("Authorization")) != 1 || subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte("Bearer "+token)) != 1 {
 			writeError(w, r, 401, "unauthorized", "Worker authentication required")
+			return
+		}
+		// Prometheus needs only the stable worker credential. Session execution
+		// additionally requires a tenant and the current worker incarnation.
+		if r.URL.Path == "/metrics" {
+			mux.ServeHTTP(w, r)
 			return
 		}
 		if len(r.Header.Values(worker.WorkerHeader)) != 1 || r.Header.Get(worker.WorkerHeader) != agent.Worker().Token {

@@ -16,6 +16,7 @@ import (
 	"novel-bot/internal/browser"
 	"novel-bot/internal/config"
 	"novel-bot/internal/httpapi"
+	"novel-bot/internal/observability"
 	"novel-bot/internal/sessions"
 	"novel-bot/internal/storage/postgres"
 	redisstore "novel-bot/internal/storage/redis"
@@ -92,8 +93,9 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 	defer publicListener.Close()
+	metrics := observability.New(cfg.WorkerID)
 	startup, cancel = context.WithTimeout(ctx, 5*time.Second)
-	agent, err := worker.NewAgent(startup, directory, launcher, sessions.Worker{ID: cfg.WorkerID, URL: cfg.WorkerURL}, sessions.Options{MaxSessions: cfg.BrowserMaxSessions, TTL: cfg.BrowserSessionTTL, StartupTimeout: cfg.BrowserStartupTimeout}, cfg.WorkerLeaseTTL, logger)
+	agent, err := worker.NewAgent(startup, directory, launcher, sessions.Worker{ID: cfg.WorkerID, URL: cfg.WorkerURL}, sessions.Options{Observer: metrics, MaxSessions: cfg.BrowserMaxSessions, TTL: cfg.BrowserSessionTTL, StartupTimeout: cfg.BrowserStartupTimeout}, cfg.WorkerLeaseTTL, logger)
 	cancel()
 	if err != nil {
 		return fmt.Errorf("register worker: %w", err)
@@ -105,6 +107,11 @@ func run(logger *slog.Logger) error {
 			logger.Error("worker cleanup failed")
 		}
 	}()
+	metrics.Bind(agent)
+	sampleCtx, stopSampling := context.WithCancel(context.Background())
+	sampleDone := make(chan struct{})
+	go func() { defer close(sampleDone); metrics.Sample(sampleCtx, launcher, cfg.MetricsSampleInterval) }()
+	defer func() { stopSampling(); <-sampleDone }()
 	client := worker.NewClient(cfg.WorkerAuthToken)
 	defer client.Close()
 	cluster := sessions.NewCluster(directory, client, cfg.BrowserStartupTimeout, repository)
@@ -118,7 +125,7 @@ func run(logger *slog.Logger) error {
 		return agent.Ready()
 	}
 	public := &http.Server{Handler: httpapi.NewRouter(service, accounts, ready, logger, cfg.AuthTimeout, httpapi.RouterOptions{Sessions: cluster, PublicAPIURL: cfg.PublicAPIURL, WorkerAuthToken: cfg.WorkerAuthToken, RateLimiter: directory, AuthRequestsPerMinute: cfg.AuthRequestsPerMinute, TrustedProxies: cfg.TrustedProxies}), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: cfg.BrowserStartupTimeout + 10*time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 * 1024}
-	private := &http.Server{Handler: httpapi.NewWorkerRouter(agent, cfg.WorkerAuthToken, logger), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: cfg.BrowserStartupTimeout + 5*time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 * 1024}
+	private := &http.Server{Handler: httpapi.NewWorkerRouter(agent, cfg.WorkerAuthToken, logger, metrics.Handler()), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: cfg.BrowserStartupTimeout + 5*time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 * 1024}
 	stopped := make(chan error, 2)
 	go func() { stopped <- public.Serve(publicListener) }()
 	go func() { stopped <- private.Serve(privateListener) }()

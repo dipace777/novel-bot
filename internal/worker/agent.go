@@ -23,6 +23,7 @@ type Agent struct {
 	stopped        bool
 	logger         *slog.Logger
 	pendingCleanup map[string]sessions.Record
+	observer       sessions.Observer
 }
 
 func NewAgent(ctx context.Context, directory sessions.Directory, launcher sessions.Launcher, w sessions.Worker, options sessions.Options, leaseTTL time.Duration, logger *slog.Logger) (*Agent, error) {
@@ -39,12 +40,13 @@ func NewAgent(ctx context.Context, directory sessions.Directory, launcher sessio
 	w.Token = token
 	w.Capacity = options.MaxSessions
 	life, cancel := context.WithCancel(context.Background())
-	a := &Agent{directory: directory, worker: w, leaseTTL: leaseTTL, cancel: cancel, done: make(chan struct{}), logger: logger, pendingCleanup: make(map[string]sessions.Record)}
+	a := &Agent{directory: directory, worker: w, leaseTTL: leaseTTL, cancel: cancel, done: make(chan struct{}), logger: logger, pendingCleanup: make(map[string]sessions.Record), observer: options.Observer}
 	options.OnStop = func(s sessions.Session) {
 		cleanup, stop := context.WithTimeout(context.Background(), 2*time.Second)
 		defer stop()
 		record := sessions.Record{ID: s.ID, ClientID: s.ClientID, WorkerID: w.ID, WorkerToken: w.Token}
 		if err := directory.Release(cleanup, record); err != nil {
+			a.event("cleanup_failure")
 			logger.Error("browser directory cleanup failed; queued for retry", "session_id", s.ID)
 			a.mu.Lock()
 			a.pendingCleanup[s.ID] = record
@@ -105,6 +107,7 @@ func (a *Agent) CreateReserved(ctx context.Context, clientID, id string) (sessio
 		err = a.directory.Publish(ctx, r, s)
 	}
 	if err != nil {
+		a.event("publish_failure")
 		return a.failedPublish(s, err)
 	}
 	s.WorkerURL, s.WorkerToken = a.worker.URL, a.worker.Token
@@ -168,6 +171,7 @@ func (a *Agent) run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-timer.C:
+			a.event("lease_lost")
 			a.logger.Error("worker lease expired; stopping browsers")
 			return
 		case <-ticker.C:
@@ -179,10 +183,12 @@ func (a *Agent) run(ctx context.Context) {
 			err := a.directory.Renew(renew, a.worker, a.leaseTTL)
 			cancel()
 			if errors.Is(err, sessions.ErrLeaseLost) || !time.Now().Before(deadline) {
+				a.event("lease_lost")
 				a.logger.Error("worker lease lost; stopping browsers")
 				return
 			}
 			if err != nil {
+				a.event("lease_renew_failure")
 				a.logger.Warn("worker heartbeat failed")
 				continue
 			}
@@ -234,5 +240,13 @@ func (a *Agent) retryCleanup(ctx context.Context) {
 				}
 			}
 		}
+	}
+}
+
+func (a *Agent) Stats() sessions.Stats { return a.local.Stats() }
+func (a *Agent) PendingCleanup() int   { a.mu.Lock(); defer a.mu.Unlock(); return len(a.pendingCleanup) }
+func (a *Agent) event(name string) {
+	if a.observer != nil {
+		a.observer.Event(name)
 	}
 }

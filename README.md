@@ -12,6 +12,7 @@ API replicas. Each API process currently also runs one browser worker.
 cmd/
   api/                 HTTP server entry point
   migrate/             Database migration executable
+  loadtest/            REST/CDP workload generator and capacity reports
 internal/
   auth/
     accounts.go        Registration, login, and login sessions
@@ -30,6 +31,8 @@ internal/
     docs.go            OpenAPI and Swagger UI routes
     sessions.go        Browser creation, termination, and public connection URLs
     cdp_proxy.go       Authenticated WebSocket proxy to worker-local Chromium
+  observability/       Prometheus worker metrics and OS memory sampling
+  loadtest/            Browser workload runner and report analysis
   limits/              Tenant policy and distributed admission contracts
   sessions/            Browser lifecycle, tenant ownership, capacity, and expiry
     cluster.go         Directory reservations and routing launches to workers
@@ -84,14 +87,12 @@ go mod download
 
 If `.env` does not exist, copy `.env.example` to `.env`, generate a pepper with
 `openssl rand -base64 32`, and put it in `API_KEY_PEPPER`. Preserve your existing
-pepper: changing it invalidates API keys and login sessions. The application reads
-environment variables and does not automatically load `.env`.
+pepper: changing it invalidates API keys and login sessions. `make run`, `make migrate`, and `make loadtest` automatically load `.env` defaults.
+Explicitly exported variables and inline environment overrides take precedence.
+The application binaries and direct `go run` commands read environment variables;
+source `.env` yourself when running them without Make.
 
 ```sh
-set -a
-source .env
-set +a
-
 make db
 make migrate
 make run
@@ -286,6 +287,30 @@ worker before launch. When every worker is full, the API returns `503` with
 Creation, CDP connection, and deletion may arrive at different API replicas;
 the shared directory routes them to the owning worker. No sticky routing is needed.
 
+## Metrics and load testing
+
+Each private worker exports authenticated Prometheus metrics at `/metrics` on
+`WORKER_URL`. Measurements include browser process-group RSS (children included),
+local startup histograms, active/starting/reserved sessions, configured capacity,
+lease health, cleanup retries, and Go runtime metrics. The public API does not
+expose this endpoint. See [worker metrics](docs/metrics.md) for the metric catalog,
+Prometheus configuration, and queries.
+
+`make loadtest` runs authenticated browser workloads at increasing concurrency,
+holds sessions open together, samples worker memory, and saves a JSON report.
+Supply `LOADTEST_API_KEY` and the memory budget for the test worker:
+
+```bash
+make loadtest LOADTEST_ARGS='--concurrency 1,2,4 --metrics-urls http://localhost:8090 --worker-memory-mib 2048'
+```
+
+The local command uses the worker credential from the sourced `.env`; remote
+runners use `LOADTEST_WORKER_TOKEN`. Recommendations require successful lifecycles,
+fresh memory samples, latency within the chosen threshold, and memory headroom.
+Suggested capacity never exceeds directly tested concurrency. See
+[load testing](docs/load-testing.md) for isolation, quotas, longer workloads,
+multiple workers, report interpretation, and optional Chromium smoke tests.
+
 ## Tenant admission limits
 
 Run `make migrate` before restarting the API after this update. Migration
@@ -368,6 +393,7 @@ budget. Forwarded headers from untrusted peers cannot change limiter identity.
 | `SESSION_TTL` | `24h` | Lifetime of each login session |
 | `CHROMIUM_PATH` | Auto-discovery | Chromium/Chrome executable |
 | `BROWSER_PROFILE_DIR` | OS temp directory | Existing parent directory for isolated profiles |
+| `METRICS_SAMPLE_INTERVAL` | `5s` | Background browser/worker RSS sample interval; accepts 250ms–1m |
 | `BROWSER_MAX_SESSIONS` | `10` | Capacity per worker, including pending launches |
 | `BROWSER_SESSION_TTL` | `15m` | Worker lifetime cap; effective lifetime also respects the tenant policy |
 | `BROWSER_STARTUP_TIMEOUT` | `10s` | Launch deadline; positive duration up to 24h |
@@ -447,7 +473,8 @@ does not move browsers or relay CDP frames. Browser sessions remain ephemeral an
 cannot be restored after a worker restart. Run workers under a supervisor/container
 that also cleans their children on abrupt termination.
 
-To try two replicas locally, load the same `.env` in two terminals and run:
+To try two replicas locally, run these commands in two terminals. Make loads the
+same `.env` and preserves each replica's inline overrides:
 
 ```sh
 # Terminal A
@@ -469,7 +496,7 @@ The current Redis adapter targets one Redis primary; Redis Cluster/Sentinel
 deployment support is not configured. Redis failures reject new session operations;
 workers stop their browsers once their leases can no longer be renewed. Thousands
 of sessions will still need resource limits, workload benchmarks,
-and observability. This implementation has not been load-tested at that capacity.
+and sustained operational validation. Metrics and a small Chromium benchmark are included; this implementation has not been load-tested at that capacity.
 
 ## SQL query workflow
 

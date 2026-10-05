@@ -15,6 +15,7 @@ import (
 )
 
 type Config struct {
+	MetricsSampleInterval time.Duration
 	AuthRequestsPerMinute int
 	TrustedProxies        []netip.Prefix
 	HTTPAddr              string
@@ -39,7 +40,7 @@ type Config struct {
 }
 
 func Load() (Config, error) {
-	cfg := Config{AuthRequestsPerMinute: 30, HTTPAddr: ":8080", DBMaxConns: 20, AuthTimeout: 2 * time.Second, SessionTTL: 24 * time.Hour, BrowserMaxSessions: 10, BrowserSessionTTL: 15 * time.Minute, BrowserStartupTimeout: 10 * time.Second, RedisURL: "redis://localhost:6930/0", RedisNamespace: "novelbot", WorkerHTTPAddr: "127.0.0.1:8090", WorkerURL: "http://127.0.0.1:8090", WorkerLeaseTTL: 15 * time.Second}
+	cfg := Config{MetricsSampleInterval: 5 * time.Second, AuthRequestsPerMinute: 30, HTTPAddr: ":8080", DBMaxConns: 20, AuthTimeout: 2 * time.Second, SessionTTL: 24 * time.Hour, BrowserMaxSessions: 10, BrowserSessionTTL: 15 * time.Minute, BrowserStartupTimeout: 10 * time.Second, RedisURL: "redis://localhost:6930/0", RedisNamespace: "novelbot", WorkerHTTPAddr: "127.0.0.1:8090", WorkerURL: "http://127.0.0.1:8090", WorkerLeaseTTL: 15 * time.Second}
 	if addr := os.Getenv("HTTP_ADDR"); addr != "" {
 		cfg.HTTPAddr = addr
 	}
@@ -138,14 +139,11 @@ func Load() (Config, error) {
 		}
 		cfg.WorkerLeaseTTL = d
 	}
-	cfg.WorkerAuthToken = os.Getenv("WORKER_AUTH_TOKEN")
-	if cfg.WorkerAuthToken == "" {
-		mac := hmac.New(sha256.New, cfg.APIKeyPepper)
-		mac.Write([]byte("novel-bot/worker-auth/v1"))
-		cfg.WorkerAuthToken = base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
-	} else if len(cfg.WorkerAuthToken) < 32 {
-		return Config{}, fmt.Errorf("WORKER_AUTH_TOKEN must contain at least 32 characters")
+	cfg.WorkerAuthToken, err = WorkerCredential(cfg.APIKeyPepper, os.Getenv("WORKER_AUTH_TOKEN"))
+	if err != nil {
+		return Config{}, err
 	}
+
 	if value := os.Getenv("AUTH_REQUESTS_PER_MINUTE"); value != "" {
 		n, err := strconv.Atoi(value)
 		if err != nil || n < 1 || n > 1000000 {
@@ -162,5 +160,29 @@ func Load() (Config, error) {
 			cfg.TrustedProxies = append(cfg.TrustedProxies, prefix.Masked())
 		}
 	}
+	if value := os.Getenv("METRICS_SAMPLE_INTERVAL"); value != "" {
+		interval, err := time.ParseDuration(value)
+		if err != nil || interval < 250*time.Millisecond || interval > time.Minute {
+			return Config{}, fmt.Errorf("METRICS_SAMPLE_INTERVAL must be between 250ms and 1m")
+		}
+		cfg.MetricsSampleInterval = interval
+	}
 	return cfg, nil
+}
+
+// WorkerCredential is shared by the API and local tooling; remote tools should
+// receive the separate worker credential, never the API-key pepper.
+func WorkerCredential(pepper []byte, override string) (string, error) {
+	if override != "" {
+		if len(override) < 32 {
+			return "", fmt.Errorf("WORKER_AUTH_TOKEN must contain at least 32 characters")
+		}
+		return override, nil
+	}
+	if len(pepper) < 32 {
+		return "", fmt.Errorf("a worker credential or valid API_KEY_PEPPER is required")
+	}
+	mac := hmac.New(sha256.New, pepper)
+	mac.Write([]byte("novel-bot/worker-auth/v1"))
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil)), nil
 }
