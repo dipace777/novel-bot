@@ -5,14 +5,18 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
+	"net/netip"
 	"net/url"
 	"os"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 )
 
 type Config struct {
+	AuthRequestsPerMinute int
+	TrustedProxies        []netip.Prefix
 	HTTPAddr              string
 	DatabaseURL           string
 	APIKeyPepper          []byte
@@ -35,7 +39,7 @@ type Config struct {
 }
 
 func Load() (Config, error) {
-	cfg := Config{HTTPAddr: ":8080", DBMaxConns: 20, AuthTimeout: 2 * time.Second, SessionTTL: 24 * time.Hour, BrowserMaxSessions: 10, BrowserSessionTTL: 15 * time.Minute, BrowserStartupTimeout: 10 * time.Second, RedisURL: "redis://localhost:6930/0", RedisNamespace: "novelbot", WorkerHTTPAddr: "127.0.0.1:8090", WorkerURL: "http://127.0.0.1:8090", WorkerLeaseTTL: 15 * time.Second}
+	cfg := Config{AuthRequestsPerMinute: 30, HTTPAddr: ":8080", DBMaxConns: 20, AuthTimeout: 2 * time.Second, SessionTTL: 24 * time.Hour, BrowserMaxSessions: 10, BrowserSessionTTL: 15 * time.Minute, BrowserStartupTimeout: 10 * time.Second, RedisURL: "redis://localhost:6930/0", RedisNamespace: "novelbot", WorkerHTTPAddr: "127.0.0.1:8090", WorkerURL: "http://127.0.0.1:8090", WorkerLeaseTTL: 15 * time.Second}
 	if addr := os.Getenv("HTTP_ADDR"); addr != "" {
 		cfg.HTTPAddr = addr
 	}
@@ -141,6 +145,22 @@ func Load() (Config, error) {
 		cfg.WorkerAuthToken = base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 	} else if len(cfg.WorkerAuthToken) < 32 {
 		return Config{}, fmt.Errorf("WORKER_AUTH_TOKEN must contain at least 32 characters")
+	}
+	if value := os.Getenv("AUTH_REQUESTS_PER_MINUTE"); value != "" {
+		n, err := strconv.Atoi(value)
+		if err != nil || n < 1 || n > 1000000 {
+			return Config{}, fmt.Errorf("AUTH_REQUESTS_PER_MINUTE must be between 1 and 1000000")
+		}
+		cfg.AuthRequestsPerMinute = n
+	}
+	if value := os.Getenv("TRUSTED_PROXY_CIDRS"); value != "" {
+		for _, cidr := range strings.Split(value, ",") {
+			prefix, err := netip.ParsePrefix(strings.TrimSpace(cidr))
+			if err != nil {
+				return Config{}, fmt.Errorf("TRUSTED_PROXY_CIDRS must be a comma-separated list of IP CIDRs")
+			}
+			cfg.TrustedProxies = append(cfg.TrustedProxies, prefix.Masked())
+		}
 	}
 	return cfg, nil
 }

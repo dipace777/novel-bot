@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"novel-bot/internal/limits"
 	"novel-bot/internal/sessions"
 )
 
@@ -76,7 +77,7 @@ func TestAtomicCapacityAcrossConcurrentReservations(t *testing.T) {
 				t.Error(err)
 				return
 			}
-			_, err = d.Reserve(ctx, "owner", id, 3*time.Second)
+			_, err = d.Reserve(ctx, "owner", id, 3*time.Second, limits.Policy{MaxConcurrentSessions: 100, MaxSessionTTL: time.Minute, SessionRequestsPerMinute: 1000})
 			if err == nil {
 				successful.Add(1)
 			} else if !errors.Is(err, sessions.ErrCapacity) {
@@ -103,11 +104,11 @@ func TestOwnershipPublicationAndWorkerIncarnationFencing(t *testing.T) {
 		t.Fatalf("duplicate live worker claimed identity: %v", err)
 	}
 	id, _ := sessions.NewID()
-	record, err := d.Reserve(ctx, "owner", id, time.Second)
+	record, err := d.Reserve(ctx, "owner", id, time.Second, limits.Policy{MaxConcurrentSessions: 100, MaxSessionTTL: time.Minute, SessionRequestsPerMinute: 1000})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if again, err := d.Reserve(ctx, "owner", id, time.Second); err != nil || again.WorkerToken != record.WorkerToken {
+	if again, err := d.Reserve(ctx, "owner", id, time.Second, limits.Policy{MaxConcurrentSessions: 100, MaxSessionTTL: time.Minute, SessionRequestsPerMinute: 1000}); err != nil || again.WorkerToken != record.WorkerToken {
 		t.Fatal("reservation not idempotent")
 	}
 	if _, err := d.Lookup(ctx, "other", id, "starting"); !errors.Is(err, sessions.ErrNotFound) {
@@ -148,7 +149,7 @@ func TestOwnershipPublicationAndWorkerIncarnationFencing(t *testing.T) {
 		t.Fatal("old shutdown removed new worker")
 	}
 	newID, _ := sessions.NewID()
-	newRecord, err := d.Reserve(ctx, "owner", newID, time.Second)
+	newRecord, err := d.Reserve(ctx, "owner", newID, time.Second, limits.Policy{MaxConcurrentSessions: 100, MaxSessionTTL: time.Minute, SessionRequestsPerMinute: 1000})
 	if err != nil {
 		t.Fatal("old slots consumed replacement capacity")
 	}
@@ -174,7 +175,7 @@ func TestReservationsAndWorkerLeasesExpire(t *testing.T) {
 		t.Fatal(err)
 	}
 	id, _ := sessions.NewID()
-	r, err := d.Reserve(ctx, "owner", id, 50*time.Millisecond)
+	r, err := d.Reserve(ctx, "owner", id, 50*time.Millisecond, limits.Policy{MaxConcurrentSessions: 100, MaxSessionTTL: time.Minute, SessionRequestsPerMinute: 1000})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +187,7 @@ func TestReservationsAndWorkerLeasesExpire(t *testing.T) {
 		t.Fatal("expired reservation published")
 	}
 	id, _ = sessions.NewID()
-	if _, err := d.Reserve(ctx, "owner", id, time.Second); err != nil {
+	if _, err := d.Reserve(ctx, "owner", id, time.Second, limits.Policy{MaxConcurrentSessions: 100, MaxSessionTTL: time.Minute, SessionRequestsPerMinute: 1000}); err != nil {
 		t.Fatal("expired capacity not released")
 	}
 	if err := d.Unregister(ctx, w); err != nil {
@@ -200,7 +201,7 @@ func TestReservationsAndWorkerLeasesExpire(t *testing.T) {
 		t.Fatal("expired worker lease resurrected")
 	}
 	id, _ = sessions.NewID()
-	if _, err := d.Reserve(ctx, "owner", id, time.Second); !errors.Is(err, sessions.ErrCapacity) {
+	if _, err := d.Reserve(ctx, "owner", id, time.Second, limits.Policy{MaxConcurrentSessions: 100, MaxSessionTTL: time.Minute, SessionRequestsPerMinute: 1000}); !errors.Is(err, sessions.ErrCapacity) {
 		t.Fatal("expired worker selected")
 	}
 }

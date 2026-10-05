@@ -15,7 +15,7 @@ func setValidEnv(t *testing.T) {
 	t.Setenv("DB_MAX_CONNS", "")
 	t.Setenv("AUTH_TIMEOUT", "")
 	t.Setenv("SESSION_TTL", "")
-	for _, name := range []string{"CHROMIUM_PATH", "BROWSER_PROFILE_DIR", "BROWSER_MAX_SESSIONS", "BROWSER_SESSION_TTL", "BROWSER_STARTUP_TIMEOUT", "PUBLIC_API_URL", "REDIS_URL", "REDIS_NAMESPACE", "WORKER_ID", "WORKER_HTTP_ADDR", "WORKER_URL", "WORKER_AUTH_TOKEN", "WORKER_LEASE_TTL"} {
+	for _, name := range []string{"AUTH_REQUESTS_PER_MINUTE", "TRUSTED_PROXY_CIDRS", "CHROMIUM_PATH", "BROWSER_PROFILE_DIR", "BROWSER_MAX_SESSIONS", "BROWSER_SESSION_TTL", "BROWSER_STARTUP_TIMEOUT", "PUBLIC_API_URL", "REDIS_URL", "REDIS_NAMESPACE", "WORKER_ID", "WORKER_HTTP_ADDR", "WORKER_URL", "WORKER_AUTH_TOKEN", "WORKER_LEASE_TTL"} {
 		t.Setenv(name, "")
 	}
 }
@@ -26,7 +26,7 @@ func TestLoadDefaultsAndOverrides(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.HTTPAddr != ":8080" || cfg.DBMaxConns != 20 || cfg.AuthTimeout != 2*time.Second || cfg.SessionTTL != 24*time.Hour || cfg.BrowserMaxSessions != 10 || cfg.BrowserSessionTTL != 15*time.Minute || cfg.BrowserStartupTimeout != 10*time.Second || cfg.RedisURL != "redis://localhost:6930/0" || cfg.WorkerLeaseTTL != 15*time.Second || len(cfg.WorkerAuthToken) < 32 {
+	if cfg.AuthRequestsPerMinute != 30 || len(cfg.TrustedProxies) != 0 || cfg.HTTPAddr != ":8080" || cfg.DBMaxConns != 20 || cfg.AuthTimeout != 2*time.Second || cfg.SessionTTL != 24*time.Hour || cfg.BrowserMaxSessions != 10 || cfg.BrowserSessionTTL != 15*time.Minute || cfg.BrowserStartupTimeout != 10*time.Second || cfg.RedisURL != "redis://localhost:6930/0" || cfg.WorkerLeaseTTL != 15*time.Second || len(cfg.WorkerAuthToken) < 32 {
 		t.Fatalf("unexpected defaults: %+v", cfg)
 	}
 	t.Setenv("HTTP_ADDR", "127.0.0.1:9000")
@@ -50,6 +50,7 @@ func TestLoadRejectsInvalidConfiguration(t *testing.T) {
 		{"DATABASE_URL", ""}, {"API_KEY_PEPPER", ""}, {"API_KEY_PEPPER", "not-base64"},
 		{"API_KEY_PEPPER", base64.StdEncoding.EncodeToString([]byte("short"))},
 		{"DB_MAX_CONNS", "0"}, {"DB_MAX_CONNS", "-2"}, {"DB_MAX_CONNS", "2147483648"},
+		{"AUTH_REQUESTS_PER_MINUTE", "0"}, {"AUTH_REQUESTS_PER_MINUTE", "bad"}, {"AUTH_REQUESTS_PER_MINUTE", "1000001"}, {"TRUSTED_PROXY_CIDRS", "127.0.0.1"}, {"TRUSTED_PROXY_CIDRS", "bad"},
 		{"AUTH_TIMEOUT", "0s"}, {"AUTH_TIMEOUT", "-1s"}, {"AUTH_TIMEOUT", "bad"},
 		{"BROWSER_MAX_SESSIONS", "0"}, {"BROWSER_MAX_SESSIONS", "bad"},
 		{"BROWSER_SESSION_TTL", "-1s"}, {"BROWSER_SESSION_TTL", "25h"},
@@ -98,5 +99,15 @@ func TestWorkerCredentialDerivationAndOverrides(t *testing.T) {
 	cfg, err := Load()
 	if err != nil || cfg.WorkerAuthToken != strings.Repeat("s", 32) || cfg.WorkerID != "replica-2" || cfg.WorkerURL != "http://127.0.0.1:8091" || cfg.WorkerHTTPAddr != "127.0.0.1:8091" || cfg.RedisURL != "redis://127.0.0.1:7000/1" || cfg.WorkerLeaseTTL != 30*time.Second {
 		t.Fatal("worker overrides failed", err)
+	}
+}
+
+func TestAdmissionConfigOverrides(t *testing.T) {
+	setValidEnv(t)
+	t.Setenv("AUTH_REQUESTS_PER_MINUTE", "60")
+	t.Setenv("TRUSTED_PROXY_CIDRS", "127.0.0.0/8, 10.0.0.0/24")
+	cfg, err := Load()
+	if err != nil || cfg.AuthRequestsPerMinute != 60 || len(cfg.TrustedProxies) != 2 {
+		t.Fatalf("admission overrides failed: %v", err)
 	}
 }

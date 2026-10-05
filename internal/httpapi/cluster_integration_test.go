@@ -17,6 +17,7 @@ import (
 
 	"novel-bot/internal/auth"
 	"novel-bot/internal/browser"
+	"novel-bot/internal/limits"
 	"novel-bot/internal/sessions"
 	redisstore "novel-bot/internal/storage/redis"
 	"novel-bot/internal/worker"
@@ -92,11 +93,15 @@ func clusterWorker(t *testing.T, d sessions.Directory, id string, launcher sessi
 	})
 	return a, server
 }
-func clusterGateway(t *testing.T, d sessions.Directory) *httptest.Server {
+func clusterGateway(t *testing.T, d sessions.Directory, providers ...limits.Provider) *httptest.Server {
 	t.Helper()
 	client := worker.NewClient(testWorkerCredential)
 	t.Cleanup(client.Close)
-	cluster := sessions.NewCluster(d, client, 5*time.Second)
+	var provider limits.Provider = limits.ProviderFunc(func(context.Context, string) (limits.Policy, error) { return limits.DefaultPolicy(), nil })
+	if len(providers) > 0 {
+		provider = providers[0]
+	}
+	cluster := sessions.NewCluster(d, client, 5*time.Second, provider)
 	keys := authenticateFunc(func(_ context.Context, token string) (auth.Principal, error) {
 		if token != "owner" && token != "other" {
 			return auth.Principal{}, auth.ErrUnauthorized
@@ -271,5 +276,104 @@ func TestRedisChromiumSessionAcrossReplicas(t *testing.T) {
 	files, err := os.ReadDir(profiles)
 	if err != nil || len(files) != 0 {
 		t.Fatalf("remote profile leaked: %v %v", files, err)
+	}
+}
+
+func TestTenantAdmissionAcrossGatewaysAndBrowserExpiry(t *testing.T) {
+	d := clusterDirectory(t)
+	backend := echoCDPBackend(t)
+	launcher := proxyLauncher{"ws" + strings.TrimPrefix(backend.URL, "http") + "/devtools/browser/test"}
+	clusterWorker(t, d, "a", launcher)
+	clusterWorker(t, d, "b", launcher)
+	provider := limits.ProviderFunc(func(context.Context, string) (limits.Policy, error) {
+		return limits.Policy{MaxConcurrentSessions: 1, MaxSessionTTL: 500 * time.Millisecond, SessionRequestsPerMinute: 4}, nil
+	})
+	first, second := clusterGateway(t, d, provider), clusterGateway(t, d, provider)
+	id, _ := createBrowserSession(t, first)
+	metadata, err := d.Lookup(context.Background(), "owner", id, "ready")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ttl := metadata.ExpiresMS - metadata.CreatedMS; ttl != 500 {
+		t.Fatalf("worker ignored tenant TTL: %dms", ttl)
+	}
+	res := sessionRequest(t, second, "POST", "/sessions", "{}", "owner")
+	body, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != 429 || res.Header.Get("Retry-After") == "" || !strings.Contains(string(body), "tenant_session_limit_reached") {
+		t.Fatalf("quota response %d: %s", res.StatusCode, body)
+	}
+	// Another tenant retains its own budget, despite the first tenant's full quota.
+	res = sessionRequest(t, second, "POST", "/sessions", "{}", "other")
+	res.Body.Close()
+	if res.StatusCode != 201 {
+		t.Fatal("tenant budgets are not isolated", res.StatusCode)
+	}
+	conn := dialCluster(t, "ws"+strings.TrimPrefix(second.URL, "http")+"/sessions/"+id)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if _, _, err := conn.Read(ctx); err == nil {
+		t.Fatal("tenant TTL did not close CDP connection")
+	}
+	id, _ = createBrowserSession(t, second)
+	res = sessionRequest(t, first, "DELETE", "/sessions/"+id, "", "owner")
+	res.Body.Close()
+	if res.StatusCode != 204 {
+		t.Fatal("remote quota cleanup failed")
+	}
+	createBrowserSession(t, first)
+	res = sessionRequest(t, second, "POST", "/sessions", "{}", "owner")
+	body, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != 429 || !strings.Contains(string(body), "session_rate_limit_exceeded") {
+		t.Fatalf("tenant rate response %d: %s", res.StatusCode, body)
+	}
+}
+
+type failingLauncher struct{}
+
+func (failingLauncher) Launch(context.Context) (sessions.Browser, error) {
+	return nil, errors.New("test startup failure")
+}
+func TestFailedStartupReleasesTenantQuota(t *testing.T) {
+	d := clusterDirectory(t)
+	clusterWorker(t, d, "a", failingLauncher{})
+	provider := limits.ProviderFunc(func(context.Context, string) (limits.Policy, error) {
+		return limits.Policy{MaxConcurrentSessions: 1, MaxSessionTTL: time.Minute, SessionRequestsPerMinute: 10}, nil
+	})
+	gateway := clusterGateway(t, d, provider)
+	for i := 0; i < 3; i++ {
+		res := sessionRequest(t, gateway, "POST", "/sessions", "{}", "owner")
+		data, _ := io.ReadAll(res.Body)
+		res.Body.Close()
+		if res.StatusCode != 503 || strings.Contains(string(data), "tenant_session_limit_reached") {
+			t.Fatalf("failed launch leaked quota: %d %s", res.StatusCode, data)
+		}
+	}
+}
+
+func TestAuthenticationRateBudgetSharedAcrossRouters(t *testing.T) {
+	d := clusterDirectory(t)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	router := func() http.Handler {
+		return NewRouter(&keySpy{}, &accountStub{}, func(context.Context) error { return nil }, logger, time.Second, RouterOptions{RateLimiter: d, AuthRequestsPerMinute: 2})
+	}
+	first, second := router(), router()
+	if res := apiRequest(first, "POST", "/v1/auth/login", `{"email":"owner@example.com","password":"password"}`, ""); res.Code != 200 {
+		t.Fatal(res.Code)
+	}
+	if res := apiRequest(second, "GET", "/v1/auth/me", "", ""); res.Code != 401 {
+		t.Fatal(res.Code)
+	}
+	if res := apiRequest(first, "POST", "/v1/auth/register", `{}`, ""); res.Code != 429 || res.Header().Get("Retry-After") == "" {
+		t.Fatal("replicas used separate auth budgets", res.Code)
+	}
+	req := httptest.NewRequest("POST", "/v1/auth/login", strings.NewReader(`{"email":"other@example.com","password":"password"}`))
+	req.RemoteAddr = "198.51.100.5:123"
+	req.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	second.ServeHTTP(response, req)
+	if response.Code != 200 {
+		t.Fatal("unrelated IP rejected", response.Code)
 	}
 }

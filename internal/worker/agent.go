@@ -12,16 +12,17 @@ import (
 )
 
 type Agent struct {
-	directory sessions.Directory
-	local     *sessions.Manager
-	worker    sessions.Worker
-	leaseTTL  time.Duration
-	cancel    context.CancelFunc
-	done      chan struct{}
-	mu        sync.Mutex
-	deadline  time.Time
-	stopped   bool
-	logger    *slog.Logger
+	directory      sessions.Directory
+	local          *sessions.Manager
+	worker         sessions.Worker
+	leaseTTL       time.Duration
+	cancel         context.CancelFunc
+	done           chan struct{}
+	mu             sync.Mutex
+	deadline       time.Time
+	stopped        bool
+	logger         *slog.Logger
+	pendingCleanup map[string]sessions.Record
 }
 
 func NewAgent(ctx context.Context, directory sessions.Directory, launcher sessions.Launcher, w sessions.Worker, options sessions.Options, leaseTTL time.Duration, logger *slog.Logger) (*Agent, error) {
@@ -38,12 +39,16 @@ func NewAgent(ctx context.Context, directory sessions.Directory, launcher sessio
 	w.Token = token
 	w.Capacity = options.MaxSessions
 	life, cancel := context.WithCancel(context.Background())
-	a := &Agent{directory: directory, worker: w, leaseTTL: leaseTTL, cancel: cancel, done: make(chan struct{}), logger: logger}
+	a := &Agent{directory: directory, worker: w, leaseTTL: leaseTTL, cancel: cancel, done: make(chan struct{}), logger: logger, pendingCleanup: make(map[string]sessions.Record)}
 	options.OnStop = func(s sessions.Session) {
 		cleanup, stop := context.WithTimeout(context.Background(), 2*time.Second)
 		defer stop()
-		if err := directory.Release(cleanup, sessions.Record{ID: s.ID, ClientID: s.ClientID, WorkerID: w.ID, WorkerToken: w.Token}); err != nil {
-			logger.Error("browser directory cleanup failed", "session_id", s.ID)
+		record := sessions.Record{ID: s.ID, ClientID: s.ClientID, WorkerID: w.ID, WorkerToken: w.Token}
+		if err := directory.Release(cleanup, record); err != nil {
+			logger.Error("browser directory cleanup failed; queued for retry", "session_id", s.ID)
+			a.mu.Lock()
+			a.pendingCleanup[s.ID] = record
+			a.mu.Unlock()
 		}
 	}
 	a.local, err = sessions.NewManager(launcher, options)
@@ -64,6 +69,7 @@ func NewAgent(ctx context.Context, directory sessions.Directory, launcher sessio
 		_ = a.local.Close(context.Background())
 		return nil, sessions.ErrLeaseLost
 	}
+	go a.retryCleanup(life)
 	go a.run(life)
 	return a, nil
 }
@@ -89,7 +95,7 @@ func (a *Agent) CreateReserved(ctx context.Context, clientID, id string) (sessio
 	if r.WorkerID != a.worker.ID || r.WorkerToken != a.worker.Token {
 		return sessions.Session{}, sessions.ErrNotFound
 	}
-	s, err := a.local.CreateWithID(ctx, clientID, id)
+	s, err := a.local.CreateWithTTL(ctx, clientID, id, time.Duration(r.MaxDurationMS)*time.Millisecond)
 	if err != nil {
 		_ = a.directory.Release(context.Background(), r)
 		return sessions.Session{}, err
@@ -127,11 +133,17 @@ func (a *Agent) Get(ctx context.Context, clientID, id string) (sessions.Session,
 	return a.local.Get(ctx, clientID, id)
 }
 func (a *Agent) Delete(ctx context.Context, clientID, id string) error {
-	return a.local.Delete(ctx, clientID, id)
+	if err := a.local.Delete(ctx, clientID, id); err != nil {
+		return err
+	}
+	// The watcher may have begun its cleanup callback concurrently. Explicitly
+	// release before acknowledging deletion; conditional release is idempotent.
+	return a.directory.Release(ctx, sessions.Record{ID: id, ClientID: clientID, WorkerID: a.worker.ID, WorkerToken: a.worker.Token})
 }
 
 func (a *Agent) run(ctx context.Context) {
 	defer close(a.done)
+	defer a.cancel()
 	defer func() {
 		a.mu.Lock()
 		a.stopped = true
@@ -189,5 +201,38 @@ func (a *Agent) Close(ctx context.Context) error {
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
+	}
+}
+
+// Retry transient cleanup failures independently of heartbeat renewal. On lease
+// loss, admission reconciles this incarnation's records and frees its quotas.
+func (a *Agent) retryCleanup(ctx context.Context) {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			a.mu.Lock()
+			pending := make([]sessions.Record, 0, len(a.pendingCleanup))
+			for _, record := range a.pendingCleanup {
+				pending = append(pending, record)
+			}
+			a.mu.Unlock()
+			for _, record := range pending {
+				if ctx.Err() != nil {
+					return
+				}
+				cleanup, cancel := context.WithTimeout(ctx, 2*time.Second)
+				err := a.directory.Release(cleanup, record)
+				cancel()
+				if err == nil {
+					a.mu.Lock()
+					delete(a.pendingCleanup, record.ID)
+					a.mu.Unlock()
+				}
+			}
+		}
 	}
 }

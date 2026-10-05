@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"time"
+
+	"novel-bot/internal/limits"
 )
 
 var ErrLeaseLost = errors.New("worker lease unavailable or owned by another incarnation")
@@ -18,14 +20,15 @@ type Worker struct {
 }
 
 type Record struct {
-	ID          string `json:"id"`
-	ClientID    string `json:"client_id"`
-	WorkerID    string `json:"worker_id"`
-	WorkerToken string `json:"worker_token"`
-	WorkerURL   string `json:"worker_url"`
-	State       string `json:"state"`
-	CreatedMS   int64  `json:"created_at_ms"`
-	ExpiresMS   int64  `json:"expires_at_ms"`
+	ID            string `json:"id"`
+	ClientID      string `json:"client_id"`
+	WorkerID      string `json:"worker_id"`
+	WorkerToken   string `json:"worker_token"`
+	WorkerURL     string `json:"worker_url"`
+	State         string `json:"state"`
+	CreatedMS     int64  `json:"created_at_ms"`
+	MaxDurationMS int64  `json:"max_duration_ms"`
+	ExpiresMS     int64  `json:"expires_at_ms"`
 }
 
 func (r Record) Session() Session {
@@ -37,7 +40,7 @@ type Directory interface {
 	Register(context.Context, Worker, time.Duration) error
 	Renew(context.Context, Worker, time.Duration) error
 	Unregister(context.Context, Worker) error
-	Reserve(context.Context, string, string, time.Duration) (Record, error)
+	Reserve(context.Context, string, string, time.Duration, limits.Policy) (Record, error)
 	Lookup(context.Context, string, string, string) (Record, error)
 	Publish(context.Context, Record, Session) error
 	Release(context.Context, Record) error

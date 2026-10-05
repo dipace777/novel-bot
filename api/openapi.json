@@ -92,6 +92,9 @@
           },
           "500": {
             "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "$ref": "#/components/responses/AuthenticationRateLimited"
           }
         },
         "requestBody": {
@@ -172,6 +175,9 @@
           },
           "500": {
             "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "$ref": "#/components/responses/AuthenticationRateLimited"
           }
         },
         "requestBody": {
@@ -243,6 +249,9 @@
           },
           "500": {
             "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "$ref": "#/components/responses/AuthenticationRateLimited"
           }
         }
       }
@@ -283,6 +292,9 @@
           },
           "500": {
             "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "$ref": "#/components/responses/AuthenticationRateLimited"
           }
         }
       }
@@ -356,6 +368,9 @@
           },
           "500": {
             "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "$ref": "#/components/responses/AuthenticationRateLimited"
           }
         },
         "requestBody": {
@@ -427,6 +442,9 @@
           },
           "500": {
             "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "$ref": "#/components/responses/AuthenticationRateLimited"
           }
         }
       }
@@ -473,6 +491,9 @@
           },
           "500": {
             "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "$ref": "#/components/responses/AuthenticationRateLimited"
           }
         },
         "parameters": [
@@ -633,7 +654,7 @@
         ],
         "operationId": "createBrowserSession",
         "summary": "Launch an isolated Chromium session",
-        "description": "Creates one headless Chromium process with an isolated temporary profile and an OS-selected loopback debugging port. Redis atomically reserves capacity on an available worker and records tenant ownership and worker identity. Returns an authenticated CDP proxy URL. Browser sessions expire after BROWSER_SESSION_TTL (15 minutes by default), independently of HTTP requests. Capacity includes pending launches. No caller-supplied launch flags are accepted.",
+        "description": "Creates one isolated headless Chromium process. PostgreSQL stores tenant policies; Redis atomically enforces tenant concurrency and creation rate limits while reserving an available worker. Defaults per tenant: 5 starting/active sessions, 30 valid creation attempts per minute, and a maximum 15-minute browser lifetime. Rate budgets count attempts denied by tenant concurrency or worker capacity. The effective lifetime is the smaller of the tenant limit and BROWSER_SESSION_TTL. Returns an authenticated CDP proxy URL; expires_at is authoritative. Deletion, expiry, failed startup, and worker lease loss release quota. No caller-supplied launch flags or lifetime overrides are accepted.",
         "security": [
           {
             "ApplicationBearer": []
@@ -705,10 +726,13 @@
             "$ref": "#/components/responses/MethodNotAllowed"
           },
           "503": {
-            "$ref": "#/components/responses/Unavailable"
+            "$ref": "#/components/responses/BrowserUnavailable"
           },
           "500": {
             "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "$ref": "#/components/responses/SessionAdmissionLimited"
           }
         }
       }
@@ -1454,7 +1478,7 @@
         }
       },
       "Unavailable": {
-        "description": "Database operation failed or timed out. Try again later.",
+        "description": "Database operation failed or timed out, or Redis admission is unavailable (rate_limiter_unavailable). Requests fail closed. Try again later.",
         "headers": {
           "X-Request-ID": {
             "$ref": "#/components/headers/RequestID"
@@ -1555,6 +1579,111 @@
                 "message": "Unable to process request"
               },
               "request_id": "44444444444444444444444444444444"
+            }
+          }
+        }
+      },
+      "AuthenticationRateLimited": {
+        "description": "Authentication/account request budget exceeded for the client IP, shared across all API replicas. Default: 30 requests per minute. Rejected requests do not extend the window.",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/RequestID"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/NoStore"
+          },
+          "Retry-After": {
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Seconds to wait before retrying."
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "authentication_rate_limit_exceeded",
+                "message": "Authentication request rate limit exceeded"
+              }
+            }
+          }
+        }
+      },
+      "SessionAdmissionLimited": {
+        "description": "Tenant exceeded its concurrent browser limit (including starting sessions) or session creation rate. Defaults: 5 sessions and 30 valid creation attempts per minute. API keys for the same tenant share both budgets.",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/RequestID"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/NoStore"
+          },
+          "Retry-After": {
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Seconds to wait before retrying."
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "examples": {
+              "concurrency": {
+                "value": {
+                  "error": {
+                    "code": "tenant_session_limit_reached",
+                    "message": "Tenant concurrent session limit reached"
+                  }
+                }
+              },
+              "rate": {
+                "value": {
+                  "error": {
+                    "code": "session_rate_limit_exceeded",
+                    "message": "Session creation rate limit exceeded"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "BrowserUnavailable": {
+        "description": "Worker capacity exhausted (session_capacity_reached, with Retry-After), browser execution unavailable, or tenant policy/Redis admission unavailable. Tenant quota and rate rejections use 429.",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/RequestID"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/NoStore"
+          },
+          "Retry-After": {
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Seconds to wait before retrying."
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "session_capacity_reached",
+                "message": "Browser session capacity reached"
+              }
             }
           }
         }

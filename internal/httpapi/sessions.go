@@ -5,9 +5,11 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"time"
 
+	"novel-bot/internal/limits"
 	"novel-bot/internal/sessions"
 )
 
@@ -20,9 +22,12 @@ type SessionManager interface {
 
 // RouterOptions keeps browser execution optional for auth-only tests/consumers.
 type RouterOptions struct {
-	Sessions        SessionManager
-	PublicAPIURL    string
-	WorkerAuthToken string
+	RateLimiter           limits.RateLimiter
+	AuthRequestsPerMinute int
+	TrustedProxies        []netip.Prefix
+	Sessions              SessionManager
+	PublicAPIURL          string
+	WorkerAuthToken       string
 }
 
 type sessionHandlers struct {
@@ -109,6 +114,18 @@ func (h sessionHandlers) delete(w http.ResponseWriter, r *http.Request) {
 
 func (h sessionHandlers) sessionError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
+	case errors.Is(err, limits.ErrConcurrency), errors.Is(err, limits.ErrRate):
+		var denied *limits.Rejection
+		delay := time.Second
+		if errors.As(err, &denied) {
+			delay = denied.RetryAfter
+		}
+		retryAfter(w, delay)
+		code, message := "session_rate_limit_exceeded", "Session creation rate limit exceeded"
+		if errors.Is(err, limits.ErrConcurrency) {
+			code, message = "tenant_session_limit_reached", "Tenant concurrent session limit reached"
+		}
+		writeError(w, r, http.StatusTooManyRequests, code, message)
 	case errors.Is(err, sessions.ErrNotFound):
 		writeError(w, r, http.StatusNotFound, "session_not_found", "Browser session not found")
 	case errors.Is(err, sessions.ErrCapacity):

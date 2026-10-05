@@ -39,7 +39,11 @@ func NewRouter(service KeyService, accounts AccountManager, ready func(context.C
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusNotFound, "not_found", "Route not found")
 	})
-	return requestMetadata(recoverPanic(mux, logger))
+	var handler http.Handler = mux
+	if len(options) > 0 && options[0].RateLimiter != nil {
+		handler = authenticationRateLimit(handler, options[0], logger)
+	}
+	return requestMetadata(recoverPanic(handler, logger))
 }
 
 func mountAccountRoutes(mux *http.ServeMux, keys KeyService, accounts AccountManager, logger *slog.Logger, timeout time.Duration) {

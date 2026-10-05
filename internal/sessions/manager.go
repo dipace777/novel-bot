@@ -57,6 +57,17 @@ func (m *Manager) Create(ctx context.Context, clientID string) (Session, error) 
 
 // CreateWithID is used for a session already reserved in the shared directory.
 func (m *Manager) CreateWithID(ctx context.Context, clientID, id string) (Session, error) {
+	return m.CreateWithTTL(ctx, clientID, id, m.options.TTL)
+}
+
+// CreateWithTTL enforces both the reservation policy and worker lifetime cap.
+func (m *Manager) CreateWithTTL(ctx context.Context, clientID, id string, ttl time.Duration) (Session, error) {
+	if ttl <= 0 {
+		return Session{}, fmt.Errorf("session lifetime must be positive")
+	}
+	if ttl > m.options.TTL {
+		ttl = m.options.TTL
+	}
 	if len(id) != 32 || clientID == "" {
 		return Session{}, fmt.Errorf("invalid session identity")
 	}
@@ -117,7 +128,7 @@ func (m *Manager) CreateWithID(ctx context.Context, clientID, id string) (Sessio
 	default:
 	}
 	now := time.Now().UTC()
-	s := &managedSession{Session: Session{ID: id, ClientID: clientID, CreatedAt: now, ExpiresAt: now.Add(m.options.TTL), Endpoint: browser.Endpoint(), Done: browser.Done()}, browser: browser}
+	s := &managedSession{Session: Session{ID: id, ClientID: clientID, CreatedAt: now, ExpiresAt: now.Add(ttl), Endpoint: browser.Endpoint(), Done: browser.Done()}, browser: browser}
 	m.sessions[id] = s
 	published = true
 	m.wg.Add(1)

@@ -18,9 +18,11 @@ type Querier interface {
 	FindAPIKey(ctx context.Context, id string) (ApiKey, error)
 	FindSession(ctx context.Context, id string) (FindSessionRow, error)
 	FindUserByEmail(ctx context.Context, email string) (User, error)
+	GetTenantPolicy(ctx context.Context, clientID string) (GetTenantPolicyRow, error)
 	ListAPIKeys(ctx context.Context, clientID string) ([]ListAPIKeysRow, error)
 	RevokeAPIKey(ctx context.Context, arg RevokeAPIKeyParams) (int64, error)
 	RevokeSession(ctx context.Context, arg RevokeSessionParams) (int64, error)
+	UpdateTenantPolicy(ctx context.Context, arg UpdateTenantPolicyParams) (int64, error)
 }
 
 var _ Querier = (*Queries)(nil)

@@ -28,9 +28,12 @@ type AuthSession struct {
 }
 
 type Client struct {
-	ID        string
-	Name      string
-	CreatedAt time.Time
+	ID                       string
+	Name                     string
+	CreatedAt                time.Time
+	MaxConcurrentSessions    int32
+	MaxSessionSeconds        int32
+	SessionRequestsPerMinute int32
 }
 
 type User struct {

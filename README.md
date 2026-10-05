@@ -30,6 +30,7 @@ internal/
     docs.go            OpenAPI and Swagger UI routes
     sessions.go        Browser creation, termination, and public connection URLs
     cdp_proxy.go       Authenticated WebSocket proxy to worker-local Chromium
+  limits/              Tenant policy and distributed admission contracts
   sessions/            Browser lifecycle, tenant ownership, capacity, and expiry
     cluster.go         Directory reservations and routing launches to workers
     directory.go       Worker leases and shared session metadata contracts
@@ -285,6 +286,74 @@ worker before launch. When every worker is full, the API returns `503` with
 Creation, CDP connection, and deletion may arrive at different API replicas;
 the shared directory routes them to the owning worker. No sticky routing is needed.
 
+## Tenant admission limits
+
+Run `make migrate` before restarting the API after this update. Migration
+`000003_tenant_limits` adds policies to existing clients and sets the defaults
+for new registrations:
+
+| Policy | Default | Storage |
+| --- | --- | --- |
+| Concurrent browser sessions | 5 per tenant | `clients.max_concurrent_sessions` |
+| Maximum browser lifetime | 900 seconds | `clients.max_session_seconds` |
+| Session creation requests | 30 per minute per tenant | `clients.session_requests_per_minute` |
+
+All API keys belonging to a client share its quota. Redis checks the tenant's
+starting/active sessions and reserves worker capacity in the same atomic script.
+Creation rate windows start with the first valid creation attempt and last one
+minute. Attempts denied by concurrency or worker capacity count toward this
+budget; rate rejections do not extend the window. Invalid credentials or malformed
+JSON do not consume the tenant creation budget. Deleting a browser frees its
+concurrency slot, but does not reset the rate window.
+
+The worker uses the smaller of `max_session_seconds` and `BROWSER_SESSION_TTL`.
+The returned `expires_at` reflects this effective lifetime. Existing browsers
+retain the policy admitted at creation; policy changes affect new creations.
+Tenants cannot raise their limits through the public API. Operators can update a
+specific client's policy through a restricted database connection, for example:
+
+```sql
+UPDATE clients
+SET max_concurrent_sessions = 10,
+    max_session_seconds = 600,
+    session_requests_per_minute = 60
+WHERE id = 'YOUR_CLIENT_ID';
+```
+
+Database constraints reject invalid limits. The application reads policies through
+sqlc and fails closed when PostgreSQL or Redis admission is unavailable.
+
+| HTTP status | Error code | Meaning |
+| --- | --- | --- |
+| `429` | `tenant_session_limit_reached` | Tenant concurrency limit reached |
+| `429` | `session_rate_limit_exceeded` | Tenant creation rate exceeded |
+| `429` | `authentication_rate_limit_exceeded` | Client IP's account request rate exceeded |
+| `503` | `session_capacity_reached` | No worker has free capacity |
+| `503` | `rate_limiter_unavailable` | Account rate enforcement unavailable |
+
+Quota/rate rejections include `Retry-After` in whole seconds. Concurrency
+rejections suggest retrying in five seconds; availability may change earlier
+through deletion. Rate rejections report the remaining window duration.
+
+Explicit deletion, natural browser exit, and failed startup release reservations.
+Transient Redis cleanup failures are retried independently of worker heartbeats.
+Expired startup reservations and browser sessions are pruned at admission; dead
+or replaced worker incarnations are also removed from tenant accounting. Cleanup
+is conditional on tenant and worker incarnation and is safe to repeat. Ambiguous
+launch responses retain quota until confirmed deletion or expiry.
+
+Authentication routes and API-key management share an IP budget in Redis before
+credential lookup or password hashing. Its default is 30 requests per minute,
+including failed attempts. IPv6 clients share a `/64` bucket. Health, Swagger,
+CDP connections, and browser deletion do not consume the account or creation
+rate budgets, so callers can still clean up browsers after reaching their limit.
+
+Behind an ingress, configure `TRUSTED_PROXY_CIDRS` with the actual proxy networks.
+The ingress must append or replace `X-Forwarded-For`; the API walks that chain
+from the nearest hop, stopping at the first untrusted address. Without this
+setting it uses the direct peer IP, so clients behind a proxy share that IP's
+budget. Forwarded headers from untrusted peers cannot change limiter identity.
+
 ## Configuration and security
 
 | Variable | Default | Purpose |
@@ -294,11 +363,13 @@ the shared directory routes them to the owning worker. No sticky routing is need
 | `HTTP_ADDR` | `:8080` | HTTP listen address |
 | `DB_MAX_CONNS` | `20` | Maximum database connections per process |
 | `AUTH_TIMEOUT` | `2s` | Deadline for auth lookups, account operations, readiness |
+| `AUTH_REQUESTS_PER_MINUTE` | `30` | Shared IP budget for auth/account and API-key management |
+| `TRUSTED_PROXY_CIDRS` | Empty | Comma-separated trusted ingress CIDRs for rate-limit client IPs |
 | `SESSION_TTL` | `24h` | Lifetime of each login session |
 | `CHROMIUM_PATH` | Auto-discovery | Chromium/Chrome executable |
 | `BROWSER_PROFILE_DIR` | OS temp directory | Existing parent directory for isolated profiles |
 | `BROWSER_MAX_SESSIONS` | `10` | Capacity per worker, including pending launches |
-| `BROWSER_SESSION_TTL` | `15m` | Browser lifetime; positive duration up to 24h |
+| `BROWSER_SESSION_TTL` | `15m` | Worker lifetime cap; effective lifetime also respects the tenant policy |
 | `BROWSER_STARTUP_TIMEOUT` | `10s` | Launch deadline; positive duration up to 24h |
 | `PUBLIC_API_URL` | Direct request origin | HTTP(S) origin used for returned CDP URLs |
 | `REDIS_URL` | `redis://localhost:6930/0` | Shared session directory connection; accepts `rediss` for TLS |
@@ -397,7 +468,7 @@ on the corresponding interface. Use consistent browser timeouts across replicas.
 The current Redis adapter targets one Redis primary; Redis Cluster/Sentinel
 deployment support is not configured. Redis failures reject new session operations;
 workers stop their browsers once their leases can no longer be renewed. Thousands
-of sessions will still need resource limits, tenant quotas, workload benchmarks,
+of sessions will still need resource limits, workload benchmarks,
 and observability. This implementation has not been load-tested at that capacity.
 
 ## SQL query workflow
@@ -458,7 +529,7 @@ shutdown, and bidirectional WebSocket proxying beyond REST deadlines. Normal
 tests use a child-process helper and a local WebSocket backend. The real-browser
 test is explicitly skipped without `TEST_CHROMIUM_PATH`.
 
-Redis tests are skipped without `TEST_REDIS_URL`. They exercise atomic capacity
+Redis tests are skipped without `TEST_REDIS_URL`. They exercise tenant concurrency across replicas, shared request budgets, lifetime enforcement, quota cleanup, and atomic capacity
 under concurrent requests, ownership, publication, expiry, worker replacement,
 cross-replica creation/CDP/deletion, private worker authentication, and lease-loss
 fencing. Tests use unique namespaces and remove only their own keys; they never

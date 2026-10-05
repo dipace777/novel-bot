@@ -107,7 +107,7 @@ func run(logger *slog.Logger) error {
 	}()
 	client := worker.NewClient(cfg.WorkerAuthToken)
 	defer client.Close()
-	cluster := sessions.NewCluster(directory, client, cfg.BrowserStartupTimeout)
+	cluster := sessions.NewCluster(directory, client, cfg.BrowserStartupTimeout, repository)
 	ready := func(ctx context.Context) error {
 		if err := repository.Ready(ctx); err != nil {
 			return err
@@ -117,7 +117,7 @@ func run(logger *slog.Logger) error {
 		}
 		return agent.Ready()
 	}
-	public := &http.Server{Handler: httpapi.NewRouter(service, accounts, ready, logger, cfg.AuthTimeout, httpapi.RouterOptions{Sessions: cluster, PublicAPIURL: cfg.PublicAPIURL, WorkerAuthToken: cfg.WorkerAuthToken}), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: cfg.BrowserStartupTimeout + 10*time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 * 1024}
+	public := &http.Server{Handler: httpapi.NewRouter(service, accounts, ready, logger, cfg.AuthTimeout, httpapi.RouterOptions{Sessions: cluster, PublicAPIURL: cfg.PublicAPIURL, WorkerAuthToken: cfg.WorkerAuthToken, RateLimiter: directory, AuthRequestsPerMinute: cfg.AuthRequestsPerMinute, TrustedProxies: cfg.TrustedProxies}), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: cfg.BrowserStartupTimeout + 10*time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 * 1024}
 	private := &http.Server{Handler: httpapi.NewWorkerRouter(agent, cfg.WorkerAuthToken, logger), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: cfg.BrowserStartupTimeout + 5*time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 * 1024}
 	stopped := make(chan error, 2)
 	go func() { stopped <- public.Serve(publicListener) }()

@@ -21,6 +21,7 @@ import (
 
 	"novel-bot/internal/auth"
 	"novel-bot/internal/httpapi"
+	"novel-bot/internal/limits"
 	"novel-bot/internal/storage/postgres"
 	"novel-bot/migrations"
 )
@@ -82,6 +83,23 @@ func TestPostgresAuthenticationIntegration(t *testing.T) {
 	client, err := service.CreateClient(ctx, "integration app")
 	if err != nil {
 		t.Fatal(err)
+	}
+	policy, err := repository.Policy(ctx, client.ID)
+	if err != nil || policy != limits.DefaultPolicy() {
+		t.Fatalf("tenant policy defaults: %+v %v", policy, err)
+	}
+	changed := limits.Policy{MaxConcurrentSessions: 2, MaxSessionTTL: 5 * time.Minute, SessionRequestsPerMinute: 10}
+	if err := repository.SetPolicy(ctx, client.ID, changed); err != nil {
+		t.Fatal(err)
+	}
+	if policy, err := repository.Policy(ctx, client.ID); err != nil || policy != changed {
+		t.Fatalf("tenant policy update: %+v %v", policy, err)
+	}
+	if err := repository.SetPolicy(ctx, client.ID, limits.Policy{}); err == nil {
+		t.Fatal("invalid tenant policy accepted")
+	}
+	if _, err := pool.Exec(ctx, `UPDATE clients SET max_concurrent_sessions = 0 WHERE id = $1`, client.ID); err == nil {
+		t.Fatal("database accepted invalid quota")
 	}
 	issued, err := service.Issue(ctx, client.ID, "integration key", time.Hour)
 	if err != nil {
