@@ -63,6 +63,7 @@ func TestOpenAPIContractAndLocalReferences(t *testing.T) {
 		"/v1/auth/register": {"post"}, "/v1/auth/login": {"post"},
 		"/v1/auth/me": {"get"}, "/v1/auth/logout": {"post"},
 		"/v1/api-keys": {"get", "post"}, "/v1/api-keys/{id}": {"delete"},
+		"/sessions": {"post"}, "/sessions/{id}": {"get", "delete"},
 		"/v1/whoami": {"get"}, "/healthz": {"get"}, "/readyz": {"get"},
 	}
 	if len(paths) != len(expected) {
@@ -90,7 +91,7 @@ func TestOpenAPIContractAndLocalReferences(t *testing.T) {
 				if len(security) != 0 {
 					t.Fatalf("public route requires credentials: %s", path)
 				}
-			case "/v1/whoami":
+			case "/v1/whoami", "/sessions", "/sessions/{id}":
 				if len(security) != 2 || security[0].(map[string]any)["ApplicationBearer"] == nil || security[1].(map[string]any)["ApplicationKeyHeader"] == nil {
 					t.Fatal("application credential alternatives missing")
 				}

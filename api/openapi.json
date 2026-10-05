@@ -3,7 +3,7 @@
   "info": {
     "title": "Novel Bot API",
     "version": "0.1.0",
-    "description": "Register an account, log in, then generate API keys for application access. Login sessions authorize account/key management; application API keys authorize automation API routes. Browser session execution is not implemented yet.\n\nUse Authorize to paste raw token values without the Bearer prefix. Authorization is not persisted across page reloads."
+    "description": "Register an account, log in, then generate API keys for application access. Login sessions authorize account/key management; application API keys authorize automation API routes. Application API keys can create isolated headless Chromium sessions and connect through authenticated CDP WebSocket proxies.\n\nUse Authorize to paste raw token values without the Bearer prefix. Authorization is not persisted across page reloads."
   },
   "servers": [
     {
@@ -27,6 +27,10 @@
     {
       "name": "Health",
       "description": "Public liveness and readiness probes."
+    },
+    {
+      "name": "Browser Sessions",
+      "description": "Create, connect to, and terminate worker-local headless Chromium sessions using application API keys."
     }
   ],
   "security": [],
@@ -621,6 +625,235 @@
           }
         }
       }
+    },
+    "/sessions": {
+      "post": {
+        "tags": [
+          "Browser Sessions"
+        ],
+        "operationId": "createBrowserSession",
+        "summary": "Launch an isolated Chromium session",
+        "description": "Creates one headless Chromium process with an isolated temporary profile and an OS-selected loopback debugging port. Returns an authenticated CDP proxy URL. Browser sessions expire after BROWSER_SESSION_TTL (15 minutes by default), independently of HTTP requests. Capacity includes pending launches. No caller-supplied launch flags are accepted.",
+        "security": [
+          {
+            "ApplicationBearer": []
+          },
+          {
+            "ApplicationKeyHeader": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false
+              },
+              "example": {}
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Browser ready for CDP connections. Send the same application API key in the WebSocket handshake.",
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Proxy path for this browser session."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserSession"
+                },
+                "example": {
+                  "id": "33333333333333333333333333333333",
+                  "created_at": "2026-10-05T08:00:00Z",
+                  "expires_at": "2026-10-05T08:15:00Z",
+                  "cdp_url": "ws://localhost:8080/sessions/33333333333333333333333333333333"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "413": {
+            "$ref": "#/components/responses/BodyTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "504": {
+            "description": "Chromium startup timed out.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/KeyUnauthorized"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/sessions/{id}": {
+      "get": {
+        "tags": [
+          "Browser Sessions"
+        ],
+        "operationId": "connectBrowserSession",
+        "summary": "Connect to the browser over CDP WebSocket",
+        "description": "Requires a WebSocket upgrade with Authorization: Bearer API_KEY or X-API-Key. Login tokens are not accepted. Connection closes on deletion, expiry, process exit, or server shutdown. Other tenants receive 404. Swagger Try it out does not establish WebSockets; use Playwright or a CDP client.",
+        "security": [
+          {
+            "ApplicationBearer": []
+          },
+          {
+            "ApplicationKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            "description": "Browser session ID returned by POST /sessions."
+          }
+        ],
+        "responses": {
+          "101": {
+            "description": "WebSocket upgraded; CDP frames are proxied bidirectionally."
+          },
+          "400": {
+            "description": "WebSocket upgrade required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Session missing, stopped, expired, or owned by another client.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Chromium CDP connection unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/KeyUnauthorized"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Browser Sessions"
+        ],
+        "operationId": "deleteBrowserSession",
+        "summary": "Terminate Chromium and remove its temporary profile",
+        "description": "Terminates the owned browser and its active CDP connections. Missing sessions or sessions owned by other clients return 404.",
+        "security": [
+          {
+            "ApplicationBearer": []
+          },
+          {
+            "ApplicationKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            "description": "Browser session ID returned by POST /sessions."
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Browser stopped and profile removed."
+          },
+          "404": {
+            "description": "Browser session not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Browser termination timed out.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/KeyUnauthorized"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -975,6 +1208,34 @@
             "enum": [
               "ready"
             ]
+          }
+        }
+      },
+      "BrowserSession": {
+        "type": "object",
+        "required": [
+          "id",
+          "created_at",
+          "expires_at",
+          "cdp_url"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{32}$"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "cdp_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Authenticated worker proxy WebSocket URL. Send the application API key in the connection headers."
           }
         }
       }

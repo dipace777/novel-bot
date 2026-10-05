@@ -13,7 +13,7 @@ window.addEventListener("load", function () {
     validatorUrl: null,
     supportedSubmitMethods: ["get", "post", "delete"],
     requestInterceptor: function (request) {
-      // Swagger may apply both authorized alternatives to /v1/whoami.
+      // Swagger may apply both authorized alternatives to application routes.
       // The API accepts exactly one credential header; prefer Bearer in the UI.
       var names = Object.keys(request.headers || {});
       var bearer = names.some(function (name) {

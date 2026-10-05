@@ -1,8 +1,9 @@
 # Novel Bot browser automation API
 
 A Go REST API foundation for a browser automation platform. Users register and
-log in before creating API keys for their applications. Browser sessions,
-scheduling, and browser workers are future features.
+log in before creating API keys for their applications. API keys can launch
+isolated headless Chromium sessions and connect through a CDP WebSocket proxy.
+Distributed scheduling and browser workers are future features.
 
 ## Project layout
 
@@ -26,6 +27,10 @@ internal/
     middleware.go      Authentication, timeouts, request IDs, panic recovery
     responses.go       JSON parsing, responses, and error mapping
     docs.go            OpenAPI and Swagger UI routes
+    sessions.go        Browser creation, termination, and public connection URLs
+    cdp_proxy.go       Authenticated WebSocket proxy to worker-local Chromium
+  sessions/            Browser lifecycle, tenant ownership, capacity, and expiry
+  browser/             Chromium launch, isolated profiles, and process cleanup
   storage/postgres/
     pool.go                    Connection configuration
     repository.go              Repository construction and shared query handle
@@ -51,15 +56,18 @@ grouped by routes, accounts, API keys, middleware, and documentation. Shared HTT
 test fixtures live in `test_helpers_test.go`.
 
 Keep authentication rules in `auth`, HTTP concerns in `httpapi`, and database
-mapping in `storage/postgres`. Add browser execution under `internal/sessions/`
-and `internal/workers/` when those features are implemented. The SQL files in
+mapping in `storage/postgres`. Browser lifecycle lives in `sessions`, process
+launching in `browser`, and CDP transport in `httpapi`. Add distributed execution
+under `internal/workers/` when implemented. The SQL files in
 `queries/` are source code; `dbgen/` is generated output and must not be edited by
 hand.
 
 ## Run locally
 
-Use the Go version in `go.mod` and a running Docker Desktop installation with
-Docker Compose, or an existing PostgreSQL database. Setup references:
+Use the Go version in `go.mod`, Chromium or Google Chrome, and a running Docker
+Desktop installation with Docker Compose, or an existing PostgreSQL database. Set
+`CHROMIUM_PATH` if the browser is not on PATH or installed in `/Applications`.
+Setup references:
 [Go](https://go.dev/doc/install) and
 [Docker Desktop for macOS](https://docs.docker.com/desktop/setup/install/mac-install/).
 
@@ -196,6 +204,9 @@ and revoking the old key.
 | GET | `/v1/api-keys` | Login token via Bearer |
 | DELETE | `/v1/api-keys/{id}` | Login token via Bearer |
 | GET | `/v1/whoami` | Application API key |
+| POST | `/sessions` | Application API key |
+| GET | `/sessions/{id}` | Application API key; WebSocket upgrade |
+| DELETE | `/sessions/{id}` | Application API key |
 | GET | `/healthz` | Public liveness |
 | GET | `/readyz` | Public database/schema readiness |
 
@@ -208,7 +219,58 @@ JSON, and additional JSON values are rejected. Bodies are limited to 16 KiB.
 Errors include `error.code`, `error.message`, and `request_id`. Responses carry
 `X-Request-ID` and `Cache-Control: no-store`. Database failures and timeouts return
 `503`. Revocation affects subsequent lookups; already authenticated requests may
-finish.
+finish. API key revocation blocks new CDP connections; an already upgraded
+connection runs until disconnect, browser deletion, expiry, or worker shutdown.
+
+## Browser sessions
+
+Create a browser using the API key issued to your application:
+
+```sh
+curl -X POST http://localhost:8080/sessions \
+  -H 'Authorization: Bearer YOUR_API_KEY' \
+  -H 'Content-Type: application/json' \
+  -d '{}'
+```
+
+Returns `201` with `id`, `created_at`, `expires_at`, and `cdp_url`, for example
+`ws://localhost:8080/sessions/SESSION_ID`. The debugging port is chosen by
+Chromium and bound to loopback. Every browser uses a separate temporary profile.
+Sessions outlive their creation requests. No browser flags or destination URLs
+are accepted in the creation body.
+
+Connect from Playwright using the returned URL and your application API key:
+
+```js
+import { chromium } from "playwright";
+
+const browser = await chromium.connectOverCDP(session.cdp_url, {
+  headers: { Authorization: `Bearer ${process.env.NOVEL_BOT_API_KEY}` },
+});
+const context = browser.contexts()[0];
+const page = await context.newPage();
+await page.goto("https://example.com");
+```
+
+CDP WebSocket handshakes accept Bearer or `X-API-Key`, with the same tenant
+ownership checks as deletion. Credentials are consumed by the API and removed
+before forwarding to Chromium. Swagger documents the WebSocket handshake but
+its Try it out button does not open a CDP connection.
+
+Delete a session when finished:
+
+```sh
+curl -X DELETE http://localhost:8080/sessions/SESSION_ID \
+  -H 'Authorization: Bearer YOUR_API_KEY'
+```
+
+Deletion returns `204` after process termination and profile cleanup. Missing or
+other tenants' sessions return `404`. Disconnection alone leaves the session
+running until deletion or expiry. Sessions expire after 15 minutes by default;
+expiry, browser exit, and graceful server shutdown remove their entries and close
+CDP connections. On Unix, termination includes the browser's child process group.
+Creation reserves capacity before launch; a full worker returns `503` with
+`session_capacity_reached` and `Retry-After`. Startup timeouts return `504`.
 
 ## Configuration and security
 
@@ -220,6 +282,17 @@ finish.
 | `DB_MAX_CONNS` | `20` | Maximum database connections per process |
 | `AUTH_TIMEOUT` | `2s` | Deadline for auth lookups, account operations, readiness |
 | `SESSION_TTL` | `24h` | Lifetime of each login session |
+| `CHROMIUM_PATH` | Auto-discovery | Chromium/Chrome executable |
+| `BROWSER_PROFILE_DIR` | OS temp directory | Existing parent directory for isolated profiles |
+| `BROWSER_MAX_SESSIONS` | `10` | Local capacity, including pending launches |
+| `BROWSER_SESSION_TTL` | `15m` | Browser lifetime; positive duration up to 24h |
+| `BROWSER_STARTUP_TIMEOUT` | `10s` | Launch deadline; positive duration up to 24h |
+| `PUBLIC_API_URL` | Direct request origin | HTTP(S) origin used for returned CDP URLs |
+
+Set `PUBLIC_API_URL=https://browsers.example.com` behind a TLS reverse proxy so
+returned connection URLs use `wss`. Forwarded headers are not trusted to construct
+URLs. The ingress must support WebSocket upgrades and suitable connection
+timeouts. Chromium's sandbox remains enabled; use an environment that supports it.
 
 Passwords use Go's [bcrypt implementation](https://pkg.go.dev/golang.org/x/crypto/bcrypt)
 at its default cost of 10. Hashing/checking is bounded to four concurrent operations
@@ -247,15 +320,24 @@ through account routes.
 
 ## Scaling direction
 
-API replicas keep sessions and keys in PostgreSQL. Authentication uses indexed
+API replicas keep login sessions and keys in PostgreSQL. Authentication uses indexed
 lookups and a bounded [pgx pool](https://pkg.go.dev/github.com/jackc/pgx/v5/pgxpool).
 Reads do not update last-used timestamps. Budget connections as
 `API replicas × DB_MAX_CONNS`, plus migrations and maintenance.
 
-Thousands of browser sessions require a separate execution layer: a queue,
-resource-limited workers, tenant authorization, leases, quotas, observability, and
-workload admission. Long-lived browser/WebSocket traffic needs different transport
-timeouts. This project has not been load-tested for thousands of browser sessions.
+Browser sessions currently belong to one Go process and are held in its protected
+in-memory map. `sessions.Launcher` separates launch mechanics from lifecycle;
+the HTTP `SessionManager` interface allows a later worker-routing implementation.
+Sessions are ephemeral and do not survive worker restarts.
+
+Horizontal scaling will need a Redis directory containing session ownership,
+worker identity, expiry, and leases; worker selection based on available capacity;
+and routing CDP/deletion requests to the owning worker. Redis does not move or
+share Chromium processes. Until that exists, use one worker or route each session
+to its original worker, with `PUBLIC_API_URL` pointing to a suitable reachable
+origin. Thousands of sessions will also need process/container resource limits,
+quotas, workload admission, and observability. This implementation has not been
+load-tested for thousands of browser sessions.
 
 ## SQL query workflow
 
@@ -292,12 +374,21 @@ make build
 
 # Load .env first and keep PostgreSQL running:
 TEST_DATABASE_URL="$DATABASE_URL" make test
+
+# Opt-in real Chromium launch + authenticated proxy test:
+TEST_CHROMIUM_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" make test
 ```
 
 Tests cover registration, password hashing, login errors, session expiry/logout,
 token tampering, API key lifecycle, token type separation, request validation, and
 tenant ownership. The concurrency test covers 1,000 authentication calls against
 a test repository, verifying race safety rather than browser capacity.
+
+Browser tests cover reserved capacity during concurrent launches, tenant
+isolation, request cancellation, startup failure cleanup, expiry, process exit,
+shutdown, and bidirectional WebSocket proxying beyond REST deadlines. Normal
+tests use a child-process helper and a local WebSocket backend. The real-browser
+test is explicitly skipped without `TEST_CHROMIUM_PATH`.
 
 Without `TEST_DATABASE_URL`, PostgreSQL integration tests are explicitly skipped.
 They create and remove an isolated schema and exercise the full HTTP account and

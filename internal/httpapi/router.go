@@ -9,7 +9,7 @@ import (
 )
 
 // NewRouter separates account sessions for key management from application API keys.
-func NewRouter(service KeyService, accounts AccountManager, ready func(context.Context) error, logger *slog.Logger, authTimeout time.Duration) http.Handler {
+func NewRouter(service KeyService, accounts AccountManager, ready func(context.Context) error, logger *slog.Logger, authTimeout time.Duration, options ...RouterOptions) http.Handler {
 	api := http.NewServeMux()
 	api.Handle("/v1/whoami", getOnly(whoami))
 	api.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -17,6 +17,9 @@ func NewRouter(service KeyService, accounts AccountManager, ready func(context.C
 	})
 	mux := http.NewServeMux()
 	mountDocumentation(mux)
+	if len(options) > 0 && options[0].Sessions != nil {
+		mountSessionRoutes(mux, options[0].Sessions, options[0].PublicAPIURL, logger, service, authTimeout)
+	}
 	if accounts != nil {
 		mountAccountRoutes(mux, service, accounts, logger, authTimeout)
 	}
