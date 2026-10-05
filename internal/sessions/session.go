@@ -27,10 +27,12 @@ type Launcher interface {
 // Session contains worker-local connection details. HTTP handlers expose only
 // metadata and the authenticated proxy URL, never the browser's debugging port.
 type Session struct {
-	ID        string
-	ClientID  string
-	CreatedAt time.Time
-	ExpiresAt time.Time
-	Endpoint  string
-	Done      <-chan struct{}
+	ID          string
+	ClientID    string
+	CreatedAt   time.Time
+	ExpiresAt   time.Time
+	WorkerURL   string
+	WorkerToken string
+	Endpoint    string
+	Done        <-chan struct{}
 }

@@ -11,7 +11,7 @@ import (
 	"novel-bot/internal/sessions"
 )
 
-// SessionManager can later be implemented by a service that routes to workers.
+// SessionManager separates HTTP handling from local or directory-routed execution.
 type SessionManager interface {
 	Create(context.Context, string) (sessions.Session, error)
 	Get(context.Context, string, string) (sessions.Session, error)
@@ -20,18 +20,20 @@ type SessionManager interface {
 
 // RouterOptions keeps browser execution optional for auth-only tests/consumers.
 type RouterOptions struct {
-	Sessions     SessionManager
-	PublicAPIURL string
+	Sessions        SessionManager
+	PublicAPIURL    string
+	WorkerAuthToken string
 }
 
 type sessionHandlers struct {
-	manager   SessionManager
-	publicURL string
-	logger    *slog.Logger
+	manager         SessionManager
+	publicURL       string
+	logger          *slog.Logger
+	workerAuthToken string
 }
 
-func mountSessionRoutes(mux *http.ServeMux, manager SessionManager, publicURL string, logger *slog.Logger, keys Authenticator, timeout time.Duration) {
-	h := sessionHandlers{manager: manager, publicURL: publicURL, logger: logger}
+func mountSessionRoutes(mux *http.ServeMux, manager SessionManager, publicURL string, logger *slog.Logger, keys Authenticator, timeout time.Duration, workerAuthToken string) {
+	h := sessionHandlers{manager: manager, publicURL: publicURL, logger: logger, workerAuthToken: workerAuthToken}
 	protected := http.NewServeMux()
 	protected.Handle("/sessions", methodOnly(http.MethodPost, http.HandlerFunc(h.create)))
 	protected.HandleFunc("/sessions/{id}", func(w http.ResponseWriter, r *http.Request) {

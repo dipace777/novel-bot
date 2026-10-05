@@ -3,7 +3,8 @@
 A Go REST API foundation for a browser automation platform. Users register and
 log in before creating API keys for their applications. API keys can launch
 isolated headless Chromium sessions and connect through a CDP WebSocket proxy.
-Distributed scheduling and browser workers are future features.
+Redis coordinates session ownership, browser worker capacity, and routing across
+API replicas. Each API process currently also runs one browser worker.
 
 ## Project layout
 
@@ -30,7 +31,10 @@ internal/
     sessions.go        Browser creation, termination, and public connection URLs
     cdp_proxy.go       Authenticated WebSocket proxy to worker-local Chromium
   sessions/            Browser lifecycle, tenant ownership, capacity, and expiry
+    cluster.go         Directory reservations and routing launches to workers
+    directory.go       Worker leases and shared session metadata contracts
   browser/             Chromium launch, isolated profiles, and process cleanup
+  worker/              Local browser agent, heartbeats, and worker HTTP client
   storage/postgres/
     pool.go                    Connection configuration
     repository.go              Repository construction and shared query handle
@@ -39,11 +43,12 @@ internal/
     readiness.go               Authentication schema readiness check
     queries/                   Handwritten SQL query definitions
     dbgen/                     sqlc-generated query methods and database models
+  storage/redis/       Atomic reservations, expiring metadata, and worker leases
 sqlc.yaml              Query generation configuration
 migrations/            Embedded, ordered, checksummed SQL migrations
 api/                   OpenAPI contract and bundled Swagger UI
 .vscode/settings.json  Go module proxy configuration for the editor
-compose.yaml           Local PostgreSQL service on port 6927
+compose.yaml           Local PostgreSQL (6927) and Redis (6930)
 .env.example           Configuration template
 Makefile               Development and verification commands
 ```
@@ -57,15 +62,16 @@ test fixtures live in `test_helpers_test.go`.
 
 Keep authentication rules in `auth`, HTTP concerns in `httpapi`, and database
 mapping in `storage/postgres`. Browser lifecycle lives in `sessions`, process
-launching in `browser`, and CDP transport in `httpapi`. Add distributed execution
-under `internal/workers/` when implemented. The SQL files in
+launching in `browser`, and CDP transport in `httpapi`. Worker execution and
+inter-worker requests live in `worker`; `storage/redis` implements coordination.
+`httpapi/worker.go` serves the authenticated private worker API. The SQL files in
 `queries/` are source code; `dbgen/` is generated output and must not be edited by
 hand.
 
 ## Run locally
 
 Use the Go version in `go.mod`, Chromium or Google Chrome, and a running Docker
-Desktop installation with Docker Compose, or an existing PostgreSQL database. Set
+Desktop installation with Docker Compose, or existing PostgreSQL and Redis services. Set
 `CHROMIUM_PATH` if the browser is not on PATH or installed in `/Applications`.
 Setup references:
 [Go](https://go.dev/doc/install) and
@@ -91,7 +97,11 @@ make run
 ```
 
 The API listens on `http://localhost:8080`. PostgreSQL is exposed at
-`127.0.0.1:6927`, mapped to container port `5432`. Stop the API with Ctrl+C and
+`127.0.0.1:6927`, mapped to container port `5432`. Redis is exposed at
+`127.0.0.1:6930`, mapped to `6379`. `make db` starts both services; `make redis`
+starts just Redis. Existing `.env` files work with the new local defaults.
+The private worker listener defaults to `127.0.0.1:8090`.
+Stop the API with Ctrl+C and
 restart it after code changes. To restart the editor's Go tooling, use
 **Go: Restart Language Server** from VS Code's Command Palette. Workspace
 settings explicitly enable module downloads through the Go module proxy.
@@ -269,8 +279,11 @@ other tenants' sessions return `404`. Disconnection alone leaves the session
 running until deletion or expiry. Sessions expire after 15 minutes by default;
 expiry, browser exit, and graceful server shutdown remove their entries and close
 CDP connections. On Unix, termination includes the browser's child process group.
-Creation reserves capacity before launch; a full worker returns `503` with
+Creation atomically reserves capacity in Redis on the least-utilized available
+worker before launch. When every worker is full, the API returns `503` with
 `session_capacity_reached` and `Retry-After`. Startup timeouts return `504`.
+Creation, CDP connection, and deletion may arrive at different API replicas;
+the shared directory routes them to the owning worker. No sticky routing is needed.
 
 ## Configuration and security
 
@@ -284,15 +297,32 @@ Creation reserves capacity before launch; a full worker returns `503` with
 | `SESSION_TTL` | `24h` | Lifetime of each login session |
 | `CHROMIUM_PATH` | Auto-discovery | Chromium/Chrome executable |
 | `BROWSER_PROFILE_DIR` | OS temp directory | Existing parent directory for isolated profiles |
-| `BROWSER_MAX_SESSIONS` | `10` | Local capacity, including pending launches |
+| `BROWSER_MAX_SESSIONS` | `10` | Capacity per worker, including pending launches |
 | `BROWSER_SESSION_TTL` | `15m` | Browser lifetime; positive duration up to 24h |
 | `BROWSER_STARTUP_TIMEOUT` | `10s` | Launch deadline; positive duration up to 24h |
 | `PUBLIC_API_URL` | Direct request origin | HTTP(S) origin used for returned CDP URLs |
+| `REDIS_URL` | `redis://localhost:6930/0` | Shared session directory connection; accepts `rediss` for TLS |
+| `REDIS_NAMESPACE` | `novelbot` | Shared namespace, isolated from other deployments |
+| `WORKER_ID` | Random per process | Worker identity; explicit IDs must be unique among live replicas |
+| `WORKER_HTTP_ADDR` | `127.0.0.1:8090` | Private worker listener |
+| `WORKER_URL` | `http://127.0.0.1:8090` | Private HTTP(S) origin reachable by all API replicas |
+| `WORKER_LEASE_TTL` | `15s` | Worker lease; renewed every one third of its lifetime; accepts 3s to 5m |
+| `WORKER_AUTH_TOKEN` | Derived from pepper | Shared private worker credential; explicit values need at least 32 characters |
 
 Set `PUBLIC_API_URL=https://browsers.example.com` behind a TLS reverse proxy so
 returned connection URLs use `wss`. Forwarded headers are not trusted to construct
 URLs. The ingress must support WebSocket upgrades and suitable connection
 timeouts. Chromium's sandbox remains enabled; use an environment that supports it.
+
+All replicas must share PostgreSQL, Redis, `REDIS_NAMESPACE`, and the same API key
+pepper and worker credential. The default worker credential is an HMAC of the
+pepper with a separate purpose string; it is distinct from application API keys
+and is never returned to callers. An explicit `WORKER_AUTH_TOKEN` overrides it.
+The private worker API accepts this credential and the expected worker incarnation
+token; application API keys are rejected. Keep its listener on a private network
+and use TLS for inter-worker traffic across hosts. Redis stores worker routing
+metadata, tenant ownership, and expiry, without application keys, Chromium ports,
+or the shared worker authentication credential.
 
 Passwords use Go's [bcrypt implementation](https://pkg.go.dev/golang.org/x/crypto/bcrypt)
 at its default cost of 10. Hashing/checking is bounded to four concurrent operations
@@ -325,19 +355,50 @@ lookups and a bounded [pgx pool](https://pkg.go.dev/github.com/jackc/pgx/v5/pgxp
 Reads do not update last-used timestamps. Budget connections as
 `API replicas × DB_MAX_CONNS`, plus migrations and maintenance.
 
-Browser sessions currently belong to one Go process and are held in its protected
-in-memory map. `sessions.Launcher` separates launch mechanics from lifecycle;
-the HTTP `SessionManager` interface allows a later worker-routing implementation.
-Sessions are ephemeral and do not survive worker restarts.
+Each process runs a public API and a private browser worker. Redis selects workers
+by reserved capacity and records `session -> tenant + worker + process incarnation`.
+Lua scripts make selection/reservation atomic. Reservations expire if startup
+does not finish, ready-session records expire with browser lifetime, and process
+exit/deletion releases their capacity. Worker heartbeat deadlines use Redis expiry
+and a conservative local deadline. A worker whose lease expires or is replaced
+stops its browsers and exits the API process; new lookups reject stale ownership.
 
-Horizontal scaling will need a Redis directory containing session ownership,
-worker identity, expiry, and leases; worker selection based on available capacity;
-and routing CDP/deletion requests to the owning worker. Redis does not move or
-share Chromium processes. Until that exists, use one worker or route each session
-to its original worker, with `PUBLIC_API_URL` pointing to a suitable reachable
-origin. Thousands of sessions will also need process/container resource limits,
-quotas, workload admission, and observability. This implementation has not been
-load-tested for thousands of browser sessions.
+Public CDP connections follow this path:
+
+```text
+Playwright -> Any API replica -> Owning worker's private API -> Chromium
+                    |
+             Redis ownership lookup
+```
+
+The Chromium process and its isolated profile stay on their owning worker. Redis
+does not move browsers or relay CDP frames. Browser sessions remain ephemeral and
+cannot be restored after a worker restart. Run workers under a supervisor/container
+that also cleans their children on abrupt termination.
+
+To try two replicas locally, load the same `.env` in two terminals and run:
+
+```sh
+# Terminal A
+WORKER_ID=worker-a HTTP_ADDR=:8080 \
+  WORKER_HTTP_ADDR=127.0.0.1:8090 WORKER_URL=http://127.0.0.1:8090 make run
+
+# Terminal B
+WORKER_ID=worker-b HTTP_ADDR=:8081 \
+  WORKER_HTTP_ADDR=127.0.0.1:8091 WORKER_URL=http://127.0.0.1:8091 make run
+```
+
+Use the same application API key at either address. Create a session through one
+replica, then connect or delete through the other using the same session ID. Behind
+a load balancer, set a common `PUBLIC_API_URL`; for different hosts, advertise each
+worker's reachable private address with `WORKER_URL` and bind the worker listener
+on the corresponding interface. Use consistent browser timeouts across replicas.
+
+The current Redis adapter targets one Redis primary; Redis Cluster/Sentinel
+deployment support is not configured. Redis failures reject new session operations;
+workers stop their browsers once their leases can no longer be renewed. Thousands
+of sessions will still need resource limits, tenant quotas, workload benchmarks,
+and observability. This implementation has not been load-tested at that capacity.
 
 ## SQL query workflow
 
@@ -375,8 +436,15 @@ make build
 # Load .env first and keep PostgreSQL running:
 TEST_DATABASE_URL="$DATABASE_URL" make test
 
+# Redis directory and two-worker routing tests (isolated namespaces):
+TEST_REDIS_URL=redis://localhost:6930/0 make test
+
 # Opt-in real Chromium launch + authenticated proxy test:
 TEST_CHROMIUM_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" make test
+
+# All integrations, including real Chromium through the distributed proxy:
+TEST_DATABASE_URL="$DATABASE_URL" TEST_REDIS_URL=redis://localhost:6930/0 \
+  TEST_CHROMIUM_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" make test
 ```
 
 Tests cover registration, password hashing, login errors, session expiry/logout,
@@ -389,6 +457,13 @@ isolation, request cancellation, startup failure cleanup, expiry, process exit,
 shutdown, and bidirectional WebSocket proxying beyond REST deadlines. Normal
 tests use a child-process helper and a local WebSocket backend. The real-browser
 test is explicitly skipped without `TEST_CHROMIUM_PATH`.
+
+Redis tests are skipped without `TEST_REDIS_URL`. They exercise atomic capacity
+under concurrent requests, ownership, publication, expiry, worker replacement,
+cross-replica creation/CDP/deletion, private worker authentication, and lease-loss
+fencing. Tests use unique namespaces and remove only their own keys; they never
+flush the shared database. Heartbeat outage and failed publication cleanup also
+have tests that run without Redis.
 
 Without `TEST_DATABASE_URL`, PostgreSQL integration tests are explicitly skipped.
 They create and remove an isolated schema and exercise the full HTTP account and

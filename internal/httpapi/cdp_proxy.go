@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"novel-bot/internal/worker"
 )
 
 var cdpTransport = &http.Transport{
@@ -31,12 +33,22 @@ func (h sessionHandlers) connect(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusBadRequest, "websocket_required", "A WebSocket upgrade is required")
 		return
 	}
-	target, err := url.Parse(s.Endpoint)
-	if err != nil || target.Scheme != "ws" || target.Hostname() != "127.0.0.1" || target.Port() == "" || !strings.HasPrefix(target.Path, "/devtools/browser/") {
-		writeError(w, r, http.StatusServiceUnavailable, "browser_unavailable", "Browser endpoint unavailable")
-		return
+	var target *url.URL
+	if s.WorkerURL != "" {
+		target, err = worker.Origin(s.WorkerURL)
+		if err != nil || h.workerAuthToken == "" {
+			writeError(w, r, http.StatusServiceUnavailable, "browser_unavailable", "Worker endpoint unavailable")
+			return
+		}
+		target.Path = "/internal/sessions/" + s.ID
+	} else {
+		target, err = url.Parse(s.Endpoint)
+		if err != nil || target.Scheme != "ws" || target.Hostname() != "127.0.0.1" || target.Port() == "" || !strings.HasPrefix(target.Path, "/devtools/browser/") {
+			writeError(w, r, http.StatusServiceUnavailable, "browser_unavailable", "Browser endpoint unavailable")
+			return
+		}
+		target.Scheme = "http"
 	}
-	target.Scheme = "http"
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	go func() {
@@ -52,8 +64,13 @@ func (h sessionHandlers) connect(w http.ResponseWriter, r *http.Request) {
 			p.Out.URL = &url.URL{Scheme: target.Scheme, Host: target.Host, Path: target.Path}
 			p.Out.Host = target.Host
 			// Authentication is terminated at the API, never forwarded to Chromium.
-			for _, name := range []string{"Authorization", "X-API-Key", "Cookie", "Origin", "Forwarded", "X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto"} {
+			for _, name := range []string{"Authorization", "X-API-Key", "Cookie", "Origin", "Forwarded", "X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto", worker.ClientHeader, worker.WorkerHeader} {
 				p.Out.Header.Del(name)
+			}
+			if s.WorkerURL != "" {
+				p.Out.Header.Set("Authorization", "Bearer "+h.workerAuthToken)
+				p.Out.Header.Set(worker.ClientHeader, principal.ClientID)
+				p.Out.Header.Set(worker.WorkerHeader, s.WorkerToken)
 			}
 		},
 		ErrorLog: log.New(io.Discard, "", 0),

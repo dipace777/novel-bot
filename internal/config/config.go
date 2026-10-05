@@ -1,10 +1,13 @@
 package config
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
 	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"time"
 )
@@ -22,10 +25,17 @@ type Config struct {
 	BrowserSessionTTL     time.Duration
 	BrowserStartupTimeout time.Duration
 	PublicAPIURL          string
+	RedisURL              string
+	RedisNamespace        string
+	WorkerID              string
+	WorkerHTTPAddr        string
+	WorkerURL             string
+	WorkerAuthToken       string
+	WorkerLeaseTTL        time.Duration
 }
 
 func Load() (Config, error) {
-	cfg := Config{HTTPAddr: ":8080", DBMaxConns: 20, AuthTimeout: 2 * time.Second, SessionTTL: 24 * time.Hour, BrowserMaxSessions: 10, BrowserSessionTTL: 15 * time.Minute, BrowserStartupTimeout: 10 * time.Second}
+	cfg := Config{HTTPAddr: ":8080", DBMaxConns: 20, AuthTimeout: 2 * time.Second, SessionTTL: 24 * time.Hour, BrowserMaxSessions: 10, BrowserSessionTTL: 15 * time.Minute, BrowserStartupTimeout: 10 * time.Second, RedisURL: "redis://localhost:6930/0", RedisNamespace: "novelbot", WorkerHTTPAddr: "127.0.0.1:8090", WorkerURL: "http://127.0.0.1:8090", WorkerLeaseTTL: 15 * time.Second}
 	if addr := os.Getenv("HTTP_ADDR"); addr != "" {
 		cfg.HTTPAddr = addr
 	}
@@ -89,6 +99,48 @@ func Load() (Config, error) {
 			}
 			*setting.target = d
 		}
+	}
+	if value := os.Getenv("REDIS_URL"); value != "" {
+		cfg.RedisURL = value
+	}
+	u, err := url.Parse(cfg.RedisURL)
+	if err != nil || (u.Scheme != "redis" && u.Scheme != "rediss") || u.Hostname() == "" {
+		return Config{}, fmt.Errorf("REDIS_URL must be a Redis connection URL")
+	}
+	if value := os.Getenv("REDIS_NAMESPACE"); value != "" {
+		cfg.RedisNamespace = value
+	}
+	if !regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`).MatchString(cfg.RedisNamespace) {
+		return Config{}, fmt.Errorf("REDIS_NAMESPACE must contain 1 to 64 letters, digits, underscores, or hyphens")
+	}
+	cfg.WorkerID = os.Getenv("WORKER_ID")
+	if cfg.WorkerID != "" && !regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`).MatchString(cfg.WorkerID) {
+		return Config{}, fmt.Errorf("WORKER_ID must contain 1 to 64 letters, digits, underscores, or hyphens")
+	}
+	if value := os.Getenv("WORKER_HTTP_ADDR"); value != "" {
+		cfg.WorkerHTTPAddr = value
+	}
+	if value := os.Getenv("WORKER_URL"); value != "" {
+		cfg.WorkerURL = value
+	}
+	u, err = url.Parse(cfg.WorkerURL)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" || u.User != nil || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
+		return Config{}, fmt.Errorf("WORKER_URL must be an http(s) origin reachable by other workers")
+	}
+	if value := os.Getenv("WORKER_LEASE_TTL"); value != "" {
+		d, err := time.ParseDuration(value)
+		if err != nil || d < 3*time.Second || d > 5*time.Minute {
+			return Config{}, fmt.Errorf("WORKER_LEASE_TTL must be between 3s and 5m")
+		}
+		cfg.WorkerLeaseTTL = d
+	}
+	cfg.WorkerAuthToken = os.Getenv("WORKER_AUTH_TOKEN")
+	if cfg.WorkerAuthToken == "" {
+		mac := hmac.New(sha256.New, cfg.APIKeyPepper)
+		mac.Write([]byte("novel-bot/worker-auth/v1"))
+		cfg.WorkerAuthToken = base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+	} else if len(cfg.WorkerAuthToken) < 32 {
+		return Config{}, fmt.Errorf("WORKER_AUTH_TOKEN must contain at least 32 characters")
 	}
 	return cfg, nil
 }

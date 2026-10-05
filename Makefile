@@ -1,7 +1,7 @@
 SQLC_VERSION := v1.31.1
 SQLC := $(CURDIR)/bin/sqlc
 
-.PHONY: run build test vet db migrate tools generate sqlc-check
+.PHONY: run build test vet db redis migrate tools generate sqlc-check
 
 run:
 	go run ./cmd/api
@@ -17,7 +17,10 @@ vet:
 	go vet ./...
 
 db:
-	docker compose up -d --wait postgres
+	docker compose up -d --wait postgres redis
+
+redis:
+	docker compose up -d --wait redis
 
 migrate:
 	go run ./cmd/migrate

@@ -15,7 +15,7 @@ func setValidEnv(t *testing.T) {
 	t.Setenv("DB_MAX_CONNS", "")
 	t.Setenv("AUTH_TIMEOUT", "")
 	t.Setenv("SESSION_TTL", "")
-	for _, name := range []string{"CHROMIUM_PATH", "BROWSER_PROFILE_DIR", "BROWSER_MAX_SESSIONS", "BROWSER_SESSION_TTL", "BROWSER_STARTUP_TIMEOUT", "PUBLIC_API_URL"} {
+	for _, name := range []string{"CHROMIUM_PATH", "BROWSER_PROFILE_DIR", "BROWSER_MAX_SESSIONS", "BROWSER_SESSION_TTL", "BROWSER_STARTUP_TIMEOUT", "PUBLIC_API_URL", "REDIS_URL", "REDIS_NAMESPACE", "WORKER_ID", "WORKER_HTTP_ADDR", "WORKER_URL", "WORKER_AUTH_TOKEN", "WORKER_LEASE_TTL"} {
 		t.Setenv(name, "")
 	}
 }
@@ -26,7 +26,7 @@ func TestLoadDefaultsAndOverrides(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.HTTPAddr != ":8080" || cfg.DBMaxConns != 20 || cfg.AuthTimeout != 2*time.Second || cfg.SessionTTL != 24*time.Hour || cfg.BrowserMaxSessions != 10 || cfg.BrowserSessionTTL != 15*time.Minute || cfg.BrowserStartupTimeout != 10*time.Second {
+	if cfg.HTTPAddr != ":8080" || cfg.DBMaxConns != 20 || cfg.AuthTimeout != 2*time.Second || cfg.SessionTTL != 24*time.Hour || cfg.BrowserMaxSessions != 10 || cfg.BrowserSessionTTL != 15*time.Minute || cfg.BrowserStartupTimeout != 10*time.Second || cfg.RedisURL != "redis://localhost:6930/0" || cfg.WorkerLeaseTTL != 15*time.Second || len(cfg.WorkerAuthToken) < 32 {
 		t.Fatalf("unexpected defaults: %+v", cfg)
 	}
 	t.Setenv("HTTP_ADDR", "127.0.0.1:9000")
@@ -57,6 +57,11 @@ func TestLoadRejectsInvalidConfiguration(t *testing.T) {
 		{"PUBLIC_API_URL", "ws://localhost"}, {"PUBLIC_API_URL", "https://user:pass@example.com"},
 		{"PUBLIC_API_URL", "https://example.com/path"}, {"PUBLIC_API_URL", "https://example.com?key=secret"},
 		{"PUBLIC_API_URL", "https://example.com#fragment"}, {"PUBLIC_API_URL", "https://"},
+		{"REDIS_URL", "http://localhost:6379"}, {"REDIS_URL", "redis://"},
+		{"REDIS_NAMESPACE", "unsafe:namespace"}, {"WORKER_ID", "invalid/worker"},
+		{"WORKER_URL", "http://user:pass@localhost"}, {"WORKER_URL", "http://localhost/path"},
+		{"WORKER_URL", "ws://localhost"}, {"WORKER_AUTH_TOKEN", "short"},
+		{"WORKER_LEASE_TTL", "1s"}, {"WORKER_LEASE_TTL", "6m"},
 		{"SESSION_TTL", "0s"}, {"SESSION_TTL", "-1s"}, {"SESSION_TTL", "bad"},
 	} {
 		t.Run(tc.key+"="+tc.value, func(t *testing.T) {
@@ -66,5 +71,32 @@ func TestLoadRejectsInvalidConfiguration(t *testing.T) {
 				t.Fatal("invalid configuration accepted")
 			}
 		})
+	}
+}
+
+func TestWorkerCredentialDerivationAndOverrides(t *testing.T) {
+	setValidEnv(t)
+	first, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := Load()
+	if err != nil || first.WorkerAuthToken != second.WorkerAuthToken {
+		t.Fatal("worker credential is not stable")
+	}
+	t.Setenv("API_KEY_PEPPER", base64.StdEncoding.EncodeToString([]byte(strings.Repeat("y", 32))))
+	changed, err := Load()
+	if err != nil || changed.WorkerAuthToken == first.WorkerAuthToken {
+		t.Fatal("worker credential ignored pepper")
+	}
+	t.Setenv("WORKER_AUTH_TOKEN", strings.Repeat("s", 32))
+	t.Setenv("WORKER_ID", "replica-2")
+	t.Setenv("WORKER_URL", "http://127.0.0.1:8091")
+	t.Setenv("WORKER_HTTP_ADDR", "127.0.0.1:8091")
+	t.Setenv("REDIS_URL", "redis://127.0.0.1:7000/1")
+	t.Setenv("WORKER_LEASE_TTL", "30s")
+	cfg, err := Load()
+	if err != nil || cfg.WorkerAuthToken != strings.Repeat("s", 32) || cfg.WorkerID != "replica-2" || cfg.WorkerURL != "http://127.0.0.1:8091" || cfg.WorkerHTTPAddr != "127.0.0.1:8091" || cfg.RedisURL != "redis://127.0.0.1:7000/1" || cfg.WorkerLeaseTTL != 30*time.Second {
+		t.Fatal("worker overrides failed", err)
 	}
 }

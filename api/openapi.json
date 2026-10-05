@@ -3,7 +3,7 @@
   "info": {
     "title": "Novel Bot API",
     "version": "0.1.0",
-    "description": "Register an account, log in, then generate API keys for application access. Login sessions authorize account/key management; application API keys authorize automation API routes. Application API keys can create isolated headless Chromium sessions and connect through authenticated CDP WebSocket proxies.\n\nUse Authorize to paste raw token values without the Bearer prefix. Authorization is not persisted across page reloads."
+    "description": "Register an account, log in, then generate API keys for application access. Login sessions authorize account/key management; application API keys authorize automation API routes. Application API keys can create isolated headless Chromium sessions and connect through authenticated CDP WebSocket proxies. Redis tracks ownership and worker capacity, allowing creation, connection, and deletion through any API replica.\n\nUse Authorize to paste raw token values without the Bearer prefix. Authorization is not persisted across page reloads."
   },
   "servers": [
     {
@@ -590,7 +590,7 @@
         ],
         "operationId": "readiness",
         "summary": "Check readiness",
-        "description": "Public probe; checks database connectivity and the authentication schema.",
+        "description": "Checks PostgreSQL authentication schema availability, Redis connectivity, and the local browser worker lease.",
         "security": [],
         "responses": {
           "200": {
@@ -633,7 +633,7 @@
         ],
         "operationId": "createBrowserSession",
         "summary": "Launch an isolated Chromium session",
-        "description": "Creates one headless Chromium process with an isolated temporary profile and an OS-selected loopback debugging port. Returns an authenticated CDP proxy URL. Browser sessions expire after BROWSER_SESSION_TTL (15 minutes by default), independently of HTTP requests. Capacity includes pending launches. No caller-supplied launch flags are accepted.",
+        "description": "Creates one headless Chromium process with an isolated temporary profile and an OS-selected loopback debugging port. Redis atomically reserves capacity on an available worker and records tenant ownership and worker identity. Returns an authenticated CDP proxy URL. Browser sessions expire after BROWSER_SESSION_TTL (15 minutes by default), independently of HTTP requests. Capacity includes pending launches. No caller-supplied launch flags are accepted.",
         "security": [
           {
             "ApplicationBearer": []
@@ -720,7 +720,7 @@
         ],
         "operationId": "connectBrowserSession",
         "summary": "Connect to the browser over CDP WebSocket",
-        "description": "Requires a WebSocket upgrade with Authorization: Bearer API_KEY or X-API-Key. Login tokens are not accepted. Connection closes on deletion, expiry, process exit, or server shutdown. Other tenants receive 404. Swagger Try it out does not establish WebSockets; use Playwright or a CDP client.",
+        "description": "Requires a WebSocket upgrade with Authorization: Bearer API_KEY or X-API-Key. Login tokens are not accepted. Connection closes on deletion, expiry, process exit, or server shutdown. Other tenants receive 404. Swagger Try it out does not establish WebSockets; use Playwright or a CDP client. Any API replica can route the connection to the owning worker using Redis. Missing or expired worker leases return 404. Private worker credentials are not exposed to clients.",
         "security": [
           {
             "ApplicationBearer": []
@@ -795,7 +795,7 @@
         ],
         "operationId": "deleteBrowserSession",
         "summary": "Terminate Chromium and remove its temporary profile",
-        "description": "Terminates the owned browser and its active CDP connections. Missing sessions or sessions owned by other clients return 404.",
+        "description": "Terminates the owned browser and its active CDP connections. Missing sessions or sessions owned by other clients return 404. Any API replica forwards termination to the owning worker. New session operations require Redis availability.",
         "security": [
           {
             "ApplicationBearer": []

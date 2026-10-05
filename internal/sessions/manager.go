@@ -2,7 +2,6 @@ package sessions
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/hex"
 	"fmt"
 	"sync"
@@ -13,6 +12,7 @@ type Options struct {
 	MaxSessions    int
 	TTL            time.Duration
 	StartupTimeout time.Duration
+	OnStop         func(Session)
 }
 
 type managedSession struct {
@@ -20,8 +20,7 @@ type managedSession struct {
 	browser Browser
 }
 
-// Manager owns local processes. A future distributed implementation can store
-// session -> worker leases in Redis while leaving process ownership on workers.
+// Manager owns local browser processes; the directory coordinates their location.
 type Manager struct {
 	launcher  Launcher
 	options   Options
@@ -29,6 +28,7 @@ type Manager struct {
 	cancel    context.CancelFunc
 	mu        sync.Mutex
 	sessions  map[string]*managedSession
+	starting  map[string]struct{}
 	reserved  int // Includes launches and browsers still being stopped.
 	closed    bool
 	wg        sync.WaitGroup
@@ -41,38 +41,56 @@ func NewManager(launcher Launcher, options Options) (*Manager, error) {
 		return nil, fmt.Errorf("browser manager requires a launcher, positive capacity, TTL, and startup timeout")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Manager{launcher: launcher, options: options, ctx: ctx, cancel: cancel, sessions: make(map[string]*managedSession), done: make(chan struct{})}, nil
+	return &Manager{launcher: launcher, options: options, ctx: ctx, cancel: cancel, sessions: make(map[string]*managedSession), starting: make(map[string]struct{}), done: make(chan struct{})}, nil
 }
 
 func (m *Manager) Create(ctx context.Context, clientID string) (Session, error) {
 	if clientID == "" {
 		return Session{}, fmt.Errorf("browser session requires a client ID")
 	}
-	var random [16]byte
-	if _, err := rand.Read(random[:]); err != nil {
+	id, err := NewID()
+	if err != nil {
 		return Session{}, err
 	}
-	id := hex.EncodeToString(random[:])
+	return m.CreateWithID(ctx, clientID, id)
+}
+
+// CreateWithID is used for a session already reserved in the shared directory.
+func (m *Manager) CreateWithID(ctx context.Context, clientID, id string) (Session, error) {
+	if len(id) != 32 || clientID == "" {
+		return Session{}, fmt.Errorf("invalid session identity")
+	}
+	if _, err := hex.DecodeString(id); err != nil {
+		return Session{}, fmt.Errorf("invalid session identity")
+	}
 	m.mu.Lock()
 	if m.closed {
 		m.mu.Unlock()
 		return Session{}, ErrClosed
+	}
+	_, active := m.sessions[id]
+	_, pending := m.starting[id]
+	if active || pending {
+		m.mu.Unlock()
+		return Session{}, fmt.Errorf("session already exists")
 	}
 	if m.reserved >= m.options.MaxSessions {
 		m.mu.Unlock()
 		return Session{}, ErrCapacity
 	}
 	m.reserved++
+	m.starting[id] = struct{}{}
 	m.wg.Add(1)
 	m.mu.Unlock()
 	defer m.wg.Done()
 	published := false
 	defer func() {
+		m.mu.Lock()
+		delete(m.starting, id)
 		if !published {
-			m.mu.Lock()
 			m.reserved--
-			m.mu.Unlock()
 		}
+		m.mu.Unlock()
 	}()
 
 	launchCtx, cancel := context.WithTimeout(ctx, m.options.StartupTimeout)
@@ -158,10 +176,14 @@ func (m *Manager) watch(s *managedSession) {
 
 func (m *Manager) remove(s *managedSession) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.sessions[s.ID] == s {
+	removed := m.sessions[s.ID] == s
+	if removed {
 		delete(m.sessions, s.ID)
 		m.reserved--
+	}
+	m.mu.Unlock()
+	if removed && m.options.OnStop != nil {
+		m.options.OnStop(s.Session)
 	}
 }
 
