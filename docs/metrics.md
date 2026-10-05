@@ -1,6 +1,6 @@
 # Worker metrics
 
-Restart `make run` after updating the code. Each worker exports Prometheus text
+Restart `make run-worker` after updating the code. Each worker exports Prometheus text
 metrics at its private `WORKER_URL/metrics`, normally
 `http://127.0.0.1:8090/metrics`. This endpoint requires
 `Authorization: Bearer <worker credential>`. Application API keys do not grant
@@ -8,10 +8,9 @@ access. It does not require the per-incarnation or tenant headers used for brows
 execution, and remains available when the worker is fenced. The public API does
 not expose `/metrics`.
 
-`WORKER_AUTH_TOKEN` supplies this credential explicitly. When it is empty, the API
-and local load-test command derive the same separate credential from
-`API_KEY_PEPPER`. For remote monitoring/load generators, provision the worker
-credential alone. Do not share the pepper with them.
+`WORKER_AUTH_TOKEN` is required by both APIs and workers. The local load-test
+command reads it from `.env`; remote generators may use `LOADTEST_WORKER_TOKEN`.
+Workers and monitoring need only this private credential, never `API_KEY_PEPPER`.
 
 ## Exported measurements
 
@@ -29,7 +28,7 @@ URLs, or PID labels are exported.
 | `novelbot_browser_rss_bytes` | Sum of RSS across all owned Chromium process groups |
 | `novelbot_browser_rss_max_bytes` | Largest RSS sum for one browser process group in the latest sample |
 | `novelbot_browser_processes` | Sampled Chrome processes, including renderers and helpers in those groups |
-| `novelbot_worker_service_rss_bytes` | RSS of the Go API/worker process from the same sample |
+| `novelbot_worker_service_rss_bytes` | RSS of the Go worker process from the same sample |
 | `novelbot_browser_memory_sample_success` | Last sample complete and successful: 1; unavailable/partial: 0 |
 | `novelbot_browser_memory_sample_timestamp_seconds` | Time of the last successful memory sample |
 | `novelbot_browser_memory_sample_interval_seconds` | Background sampling interval |
@@ -52,7 +51,7 @@ RSS includes shared mappings, so summing processes can count shared pages more
 than once. It is a conservative diagnostic estimate, not container memory usage
 or PSS. Samples can miss short allocation peaks. On failures, prior memory values
 are retained; check success and timestamp rather than interpreting stale values
-as current. The API/worker process's RSS is reported separately. For hard container
+as current. The worker process's RSS is reported separately. For hard container
 limits, also measure cgroup memory current/peak, OOM events, CPU, and file descriptors.
 
 ## Prometheus

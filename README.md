@@ -4,13 +4,16 @@ A Go REST API foundation for a browser automation platform. Users register and
 log in before creating API keys for their applications. API keys can launch
 isolated headless Chromium sessions and connect through a CDP WebSocket proxy.
 Redis coordinates session ownership, browser worker capacity, and routing across
-API replicas. Each API process currently also runs one browser worker.
+API replicas. Public APIs and browser workers run as independent processes, so
+request traffic and browser capacity can scale separately.
 
 ## Project layout
 
 ```text
 cmd/
-  api/                 HTTP server entry point
+  api/                 Public REST API and CDP gateway
+  worker/              Chromium worker and private metrics entry point
+  healthcheck/         Bounded container readiness probe
   migrate/             Database migration executable
   loadtest/            REST/CDP workload generator and capacity reports
 internal/
@@ -21,7 +24,9 @@ internal/
     repositories.go    Storage contracts used by authentication services
     errors.go          Shared domain errors
   config/
-    config.go          Environment configuration and validation
+    api.go             API environment configuration
+    worker.go          Worker environment configuration
+    database.go        Database/migration configuration
   httpapi/
     router.go          Route wiring and HTTP method guards
     accounts.go        Account HTTP handlers and service contract
@@ -52,7 +57,8 @@ sqlc.yaml              Query generation configuration
 migrations/            Embedded, ordered, checksummed SQL migrations
 api/                   OpenAPI contract and bundled Swagger UI
 .vscode/settings.json  Go module proxy configuration for the editor
-compose.yaml           Local PostgreSQL (6927) and Redis (6930)
+compose.yaml           PostgreSQL/Redis plus API and two workers (app profile)
+Dockerfile             Separate API, worker, and migration image targets
 .env.example           Configuration template
 Makefile               Development and verification commands
 ```
@@ -87,7 +93,10 @@ go mod download
 
 If `.env` does not exist, copy `.env.example` to `.env`, generate a pepper with
 `openssl rand -base64 32`, and put it in `API_KEY_PEPPER`. Preserve your existing
-pepper: changing it invalidates API keys and login sessions. `make run`, `make migrate`, and `make loadtest` automatically load `.env` defaults.
+pepper: changing it invalidates API keys and login sessions. Generate a separate
+`WORKER_AUTH_TOKEN` with `openssl rand -hex 32` and share it between APIs and
+workers. `make run`, `make run-worker`, `make migrate`, and `make loadtest`
+automatically load `.env` defaults.
 Explicitly exported variables and inline environment overrides take precedence.
 The application binaries and direct `go run` commands read environment variables;
 source `.env` yourself when running them without Make.
@@ -95,15 +104,21 @@ source `.env` yourself when running them without Make.
 ```sh
 make db
 make migrate
-make run
+make run-api
+
+# Another terminal: launches the independent Chromium worker
+make run-worker
 ```
 
 The API listens on `http://localhost:8080`. PostgreSQL is exposed at
 `127.0.0.1:6927`, mapped to container port `5432`. Redis is exposed at
 `127.0.0.1:6930`, mapped to `6379`. `make db` starts both services; `make redis`
-starts just Redis. Existing `.env` files work with the new local defaults.
+starts just Redis. `make run` is an alias for `make run-api`; it starts no browsers.
+Use `make up` for the full Docker deployment with two workers; see
+[independent processes](docs/processes.md) for configuration, readiness, routing,
+and failure drills.
 The private worker listener defaults to `127.0.0.1:8090`.
-Stop the API with Ctrl+C and
+Stop each process with Ctrl+C and
 restart it after code changes. To restart the editor's Go tooling, use
 **Go: Restart Language Server** from VS Code's Command Palette. Workspace
 settings explicitly enable module downloads through the Go module proxy.
@@ -220,7 +235,7 @@ and revoking the old key.
 | GET | `/sessions/{id}` | Application API key; WebSocket upgrade |
 | DELETE | `/sessions/{id}` | Application API key |
 | GET | `/healthz` | Public liveness |
-| GET | `/readyz` | Public database/schema readiness |
+| GET | `/readyz` | Public PostgreSQL/schema and Redis readiness |
 
 API keys cannot manage keys or access account routes. Login tokens cannot access
 application routes. Each account owns one client; future team/project membership
@@ -396,25 +411,26 @@ budget. Forwarded headers from untrusted peers cannot change limiter identity.
 | `METRICS_SAMPLE_INTERVAL` | `5s` | Background browser/worker RSS sample interval; accepts 250ms–1m |
 | `BROWSER_MAX_SESSIONS` | `10` | Capacity per worker, including pending launches |
 | `BROWSER_SESSION_TTL` | `15m` | Worker lifetime cap; effective lifetime also respects the tenant policy |
-| `BROWSER_STARTUP_TIMEOUT` | `10s` | Launch deadline; positive duration up to 24h |
+| `BROWSER_STARTUP_TIMEOUT` | `10s` | Worker launch deadline; positive duration up to 24h |
+| `SESSION_STARTUP_TIMEOUT` | `10s` | API reservation/RPC startup budget; at least the worker launch deadline |
 | `PUBLIC_API_URL` | Direct request origin | HTTP(S) origin used for returned CDP URLs |
 | `REDIS_URL` | `redis://localhost:6930/0` | Shared session directory connection; accepts `rediss` for TLS |
 | `REDIS_NAMESPACE` | `novelbot` | Shared namespace, isolated from other deployments |
-| `WORKER_ID` | Random per process | Worker identity; explicit IDs must be unique among live replicas |
+| `WORKER_ID` | Random per process | Worker identity; explicit IDs must be unique among live workers |
 | `WORKER_HTTP_ADDR` | `127.0.0.1:8090` | Private worker listener |
 | `WORKER_URL` | `http://127.0.0.1:8090` | Private HTTP(S) origin reachable by all API replicas |
 | `WORKER_LEASE_TTL` | `15s` | Worker lease; renewed every one third of its lifetime; accepts 3s to 5m |
-| `WORKER_AUTH_TOKEN` | Derived from pepper | Shared private worker credential; explicit values need at least 32 characters |
+| `WORKER_AUTH_TOKEN` | Required | Shared private worker credential, at least 32 characters; API and worker roles |
 
 Set `PUBLIC_API_URL=https://browsers.example.com` behind a TLS reverse proxy so
 returned connection URLs use `wss`. Forwarded headers are not trusted to construct
 URLs. The ingress must support WebSocket upgrades and suitable connection
 timeouts. Chromium's sandbox remains enabled; use an environment that supports it.
 
-All replicas must share PostgreSQL, Redis, `REDIS_NAMESPACE`, and the same API key
-pepper and worker credential. The default worker credential is an HMAC of the
-pepper with a separate purpose string; it is distinct from application API keys
-and is never returned to callers. An explicit `WORKER_AUTH_TOKEN` overrides it.
+API replicas share PostgreSQL and the API-key pepper. APIs and workers share
+Redis, `REDIS_NAMESPACE`, and an explicit `WORKER_AUTH_TOKEN`. Workers require
+neither PostgreSQL nor the pepper; migrations load database settings only. See
+[role configuration and readiness](docs/processes.md).
 The private worker API accepts this credential and the expected worker incarnation
 token; application API keys are rejected. Keep its listener on a private network
 and use TLS for inter-worker traffic across hosts. Redis stores worker routing
@@ -452,13 +468,14 @@ lookups and a bounded [pgx pool](https://pkg.go.dev/github.com/jackc/pgx/v5/pgxp
 Reads do not update last-used timestamps. Budget connections as
 `API replicas × DB_MAX_CONNS`, plus migrations and maintenance.
 
-Each process runs a public API and a private browser worker. Redis selects workers
+Public API and browser worker processes scale independently. Redis selects workers
 by reserved capacity and records `session -> tenant + worker + process incarnation`.
 Lua scripts make selection/reservation atomic. Reservations expire if startup
 does not finish, ready-session records expire with browser lifetime, and process
 exit/deletion releases their capacity. Worker heartbeat deadlines use Redis expiry
 and a conservative local deadline. A worker whose lease expires or is replaced
-stops its browsers and exits the API process; new lookups reject stale ownership.
+stops its browsers and exits only the worker process; APIs remain available, and
+new lookups reject stale ownership.
 
 Public CDP connections follow this path:
 
@@ -473,24 +490,13 @@ does not move browsers or relay CDP frames. Browser sessions remain ephemeral an
 cannot be restored after a worker restart. Run workers under a supervisor/container
 that also cleans their children on abrupt termination.
 
-To try two replicas locally, run these commands in two terminals. Make loads the
-same `.env` and preserves each replica's inline overrides:
-
-```sh
-# Terminal A
-WORKER_ID=worker-a HTTP_ADDR=:8080 \
-  WORKER_HTTP_ADDR=127.0.0.1:8090 WORKER_URL=http://127.0.0.1:8090 make run
-
-# Terminal B
-WORKER_ID=worker-b HTTP_ADDR=:8081 \
-  WORKER_HTTP_ADDR=127.0.0.1:8091 WORKER_URL=http://127.0.0.1:8091 make run
-```
-
-Use the same application API key at either address. Create a session through one
-replica, then connect or delete through the other using the same session ID. Behind
-a load balancer, set a common `PUBLIC_API_URL`; for different hosts, advertise each
-worker's reachable private address with `WORKER_URL` and bind the worker listener
-on the corresponding interface. Use consistent browser timeouts across replicas.
+Run APIs with `make run-api` and workers with `make run-worker`. An API replica
+needs its own `HTTP_ADDR`; a worker needs a unique `WORKER_ID`, listener, and
+reachable `WORKER_URL`. Behind a load balancer, set a common `PUBLIC_API_URL`.
+The API startup budget must cover the workers' launch deadlines. See
+[independent processes](docs/processes.md) for local commands, the two-worker
+Compose deployment, and a worker failure drill. Restarting an API closes client
+WebSockets but leaves browsers running on their workers for reconnection.
 
 The current Redis adapter targets one Redis primary; Redis Cluster/Sentinel
 deployment support is not configured. Redis failures reject new session operations;

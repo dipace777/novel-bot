@@ -1,0 +1,12 @@
+.git
+.agents
+.codex
+.aws
+.env
+.env.*
+!.env.example
+bin
+loadtest-results
+loadtest-report.json
+*.test
+.DS_Store

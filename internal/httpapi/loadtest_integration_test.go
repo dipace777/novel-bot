@@ -43,7 +43,7 @@ func TestChromiumLoadTestCapacityReport(t *testing.T) {
 		t.Fatal(err)
 	}
 	metrics.Bind(agent)
-	private.Config.Handler = NewWorkerRouter(agent, testWorkerCredential, logger, metrics.Handler())
+	private.Config.Handler = NewWorkerRouter(agent, testWorkerCredential, logger, WorkerRouterOptions{Metrics: metrics.Handler()})
 	private.Start()
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

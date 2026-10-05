@@ -30,7 +30,7 @@ func (metricsWorkerStub) Delete(context.Context, string, string) error {
 }
 func TestWorkerMetricsRequirePrivateCredentialOnly(t *testing.T) {
 	m := observability.New("worker")
-	router := NewWorkerRouter(metricsWorkerStub{}, testWorkerCredential, slog.New(slog.NewTextHandler(io.Discard, nil)), m.Handler())
+	router := NewWorkerRouter(metricsWorkerStub{}, testWorkerCredential, slog.New(slog.NewTextHandler(io.Discard, nil)), WorkerRouterOptions{Metrics: m.Handler()})
 	for _, token := range []string{"", "application-api-key", testWorkerCredential} {
 		response := apiRequest(router, "GET", "/metrics", "", token)
 		want := 401

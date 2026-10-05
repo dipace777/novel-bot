@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -56,8 +55,7 @@ func run() int {
 		}
 	}
 	if len(cfg.MetricsURLs) > 0 && cfg.WorkerToken == "" {
-		pepper, _ := base64.StdEncoding.Strict().DecodeString(os.Getenv("API_KEY_PEPPER"))
-		token, err := config.WorkerCredential(pepper, os.Getenv("WORKER_AUTH_TOKEN"))
+		token, err := config.WorkerCredential(os.Getenv("WORKER_AUTH_TOKEN"))
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Set LOADTEST_WORKER_TOKEN or source the local .env for worker metrics")
 			return 2

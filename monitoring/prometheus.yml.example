@@ -9,4 +9,4 @@ scrape_configs:
       credentials_file: /run/secrets/novel_bot_worker_token
     static_configs:
       # Reachable private worker addresses, not public API ports.
-      - targets: ['127.0.0.1:8090']
+      - targets: ['127.0.0.1:8090', '127.0.0.1:8091']

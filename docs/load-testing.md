@@ -10,11 +10,14 @@ real workloads.
 
 ## Run locally
 
-Start PostgreSQL/Redis and the development server first:
+Start PostgreSQL/Redis and the API and worker first:
 
 ```bash
 make db
-make run
+make run-api
+
+# Another terminal
+make run-worker
 ```
 
 In another terminal, supply an application API key
@@ -29,9 +32,10 @@ make loadtest LOADTEST_ARGS='--concurrency 1,2,4 --rounds 3 --hold 15s --metrics
 Use the memory budget allocated to this worker, not the entire host's RAM.
 `2048` is an example allocation, not an inferred machine limit. The command reads
 credentials from the environment, and never includes them in reports or logs.
-Make automatically loads `.env`. When run locally, the command uses `WORKER_AUTH_TOKEN` or derives the same
-worker credential as the API. On a separate load-generator host, set
-`LOADTEST_WORKER_TOKEN` explicitly instead of provisioning `API_KEY_PEPPER`.
+Make automatically loads `.env` and uses `WORKER_AUTH_TOKEN`. On a separate
+load-generator host, set `LOADTEST_WORKER_TOKEN` explicitly. No API-key pepper is
+needed by the generator. See [independent processes](processes.md) for two workers
+and the Compose deployment.
 
 Use `--url` when the public API listens elsewhere; that origin must match the
 returned CDP URLs. Use `--target-url https://your-test-page.example` for a different

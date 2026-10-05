@@ -6,7 +6,7 @@ services:
       POSTGRES_PASSWORD: novelbot
       POSTGRES_DB: novelbot
     ports:
-      - "127.0.0.1:6927:5432"
+      - "127.0.0.1:${COMPOSE_POSTGRES_PORT:-6927}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -19,7 +19,7 @@ services:
     image: redis:8-alpine
     command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
     ports:
-      - "127.0.0.1:6930:6379"
+      - "127.0.0.1:${COMPOSE_REDIS_PORT:-6930}:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -27,6 +27,104 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  migrate:
+    profiles: [app]
+    build:
+      context: .
+      target: migrate
+    environment:
+      DATABASE_URL: postgres://novelbot:novelbot@postgres:5432/novelbot?sslmode=disable
+      DB_MAX_CONNS: 2
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    profiles: [app]
+    build:
+      context: .
+      target: api
+    environment:
+      HTTP_ADDR: :8080
+      DATABASE_URL: postgres://novelbot:novelbot@postgres:5432/novelbot?sslmode=disable
+      DB_MAX_CONNS: ${DB_MAX_CONNS:-20}
+      API_KEY_PEPPER: ${API_KEY_PEPPER:-}
+      WORKER_AUTH_TOKEN: ${WORKER_AUTH_TOKEN:-}
+      REDIS_URL: redis://redis:6379/0
+      REDIS_NAMESPACE: ${COMPOSE_REDIS_NAMESPACE:-novelbot-compose}
+      AUTH_TIMEOUT: ${AUTH_TIMEOUT:-2s}
+      AUTH_REQUESTS_PER_MINUTE: ${AUTH_REQUESTS_PER_MINUTE:-30}
+      TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-}
+      SESSION_TTL: ${SESSION_TTL:-24h}
+      SESSION_STARTUP_TIMEOUT: ${SESSION_STARTUP_TIMEOUT:-10s}
+      PUBLIC_API_URL: ${PUBLIC_API_URL:-}
+    ports:
+      - "127.0.0.1:${COMPOSE_API_PORT:-8080}:8080"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, healthcheck, "http://127.0.0.1:8080/readyz"]
+      interval: 5s
+      timeout: 4s
+      retries: 10
+    init: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    stop_grace_period: 20s
+    restart: unless-stopped
+
+  worker-a:
+    <<: &worker
+      profiles: [app]
+      build:
+        context: .
+        target: worker
+      depends_on:
+        redis:
+          condition: service_healthy
+      healthcheck:
+        test: [CMD, healthcheck, --worker, "http://127.0.0.1:8090/readyz"]
+        interval: 5s
+        timeout: 4s
+        retries: 10
+      init: true
+      cap_drop: [ALL]
+      security_opt:
+        - "no-new-privileges:true"
+        - "seccomp=./deploy/chromium-seccomp.json"
+      shm_size: 512mb
+      mem_limit: ${COMPOSE_WORKER_MEMORY:-4g}
+      stop_grace_period: 20s
+      restart: unless-stopped
+    environment:
+      <<: &worker-env
+        REDIS_URL: redis://redis:6379/0
+        REDIS_NAMESPACE: ${COMPOSE_REDIS_NAMESPACE:-novelbot-compose}
+        WORKER_AUTH_TOKEN: ${WORKER_AUTH_TOKEN:-}
+        WORKER_HTTP_ADDR: :8090
+        WORKER_LEASE_TTL: ${WORKER_LEASE_TTL:-15s}
+        BROWSER_MAX_SESSIONS: ${COMPOSE_WORKER_MAX_SESSIONS:-2}
+        BROWSER_SESSION_TTL: ${BROWSER_SESSION_TTL:-15m}
+        BROWSER_STARTUP_TIMEOUT: ${BROWSER_STARTUP_TIMEOUT:-10s}
+        METRICS_SAMPLE_INTERVAL: ${METRICS_SAMPLE_INTERVAL:-5s}
+      WORKER_ID: worker-a
+      WORKER_URL: http://worker-a:8090
+    ports:
+      - "127.0.0.1:${COMPOSE_WORKER_A_PORT:-8090}:8090"
+
+  worker-b:
+    <<: *worker
+    environment:
+      <<: *worker-env
+      WORKER_ID: worker-b
+      WORKER_URL: http://worker-b:8090
+    ports:
+      - "127.0.0.1:${COMPOSE_WORKER_B_PORT:-8091}:8090"
 
 volumes:
   postgres_data:

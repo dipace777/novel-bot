@@ -30,7 +30,7 @@ func NewRouter(service KeyService, accounts AccountManager, ready func(context.C
 		ctx, cancel := context.WithTimeout(r.Context(), authTimeout)
 		defer cancel()
 		if err := ready(ctx); err != nil {
-			writeError(w, r, http.StatusServiceUnavailable, "not_ready", "Database unavailable")
+			writeError(w, r, http.StatusServiceUnavailable, "not_ready", "API dependencies unavailable")
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})

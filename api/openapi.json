@@ -611,7 +611,7 @@
         ],
         "operationId": "readiness",
         "summary": "Check readiness",
-        "description": "Checks PostgreSQL authentication schema availability, Redis connectivity, and the local browser worker lease.",
+        "description": "Checks PostgreSQL authentication schema availability and Redis connectivity. Worker capacity is reported by session creation, independently of API readiness.",
         "security": [],
         "responses": {
           "200": {
@@ -1520,7 +1520,7 @@
             "example": {
               "error": {
                 "code": "not_ready",
-                "message": "Database unavailable"
+                "message": "API dependencies unavailable"
               },
               "request_id": "44444444444444444444444444444444"
             }

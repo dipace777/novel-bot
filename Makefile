@@ -1,13 +1,20 @@
 SQLC_VERSION := v1.31.1
 SQLC := $(CURDIR)/bin/sqlc
 
-.PHONY: run build test vet db redis migrate tools generate sqlc-check loadtest
+.PHONY: run build test vet db redis migrate tools generate sqlc-check loadtest run-api run-worker up down
 
-run:
+run: run-api
+
+run-api:
 	./scripts/with-env.sh go run ./cmd/api
+
+run-worker:
+	./scripts/with-env.sh go run ./cmd/worker
 
 build:
 	go build -o bin/api ./cmd/api
+	go build -o bin/worker ./cmd/worker
+	go build -o bin/healthcheck ./cmd/healthcheck
 	go build -o bin/migrate ./cmd/migrate
 	go build -o bin/loadtest ./cmd/loadtest
 
@@ -41,3 +48,10 @@ sqlc-check: tools
 # Example: make loadtest LOADTEST_ARGS='--concurrency 1,2,4 --metrics-urls http://localhost:8090 --worker-memory-mib 2048'
 loadtest:
 	./scripts/with-env.sh go run ./cmd/loadtest $(LOADTEST_ARGS)
+
+# The app profile adds one public API, migrations, and two independent workers.
+up:
+	docker compose --profile app up -d --build --wait
+
+down:
+	docker compose --profile app down

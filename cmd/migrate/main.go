@@ -23,7 +23,7 @@ func main() {
 }
 
 func run() error {
-	cfg, err := config.Load()
+	cfg, err := config.LoadDatabase()
 	if err != nil {
 		return err
 	}

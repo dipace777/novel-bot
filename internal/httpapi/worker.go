@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"novel-bot/internal/auth"
 	"novel-bot/internal/sessions"
@@ -19,12 +20,34 @@ type WorkerService interface {
 	Delete(context.Context, string, string) error
 }
 
+type WorkerRouterOptions struct {
+	Metrics http.Handler
+	Ready   func(context.Context) error
+}
+
 // NewWorkerRouter is served on a separate private listener, never the public API.
-func NewWorkerRouter(agent WorkerService, token string, logger *slog.Logger, metricHandlers ...http.Handler) http.Handler {
+func NewWorkerRouter(agent WorkerService, token string, logger *slog.Logger, options ...WorkerRouterOptions) http.Handler {
 	mux := http.NewServeMux()
-	if len(metricHandlers) > 0 && metricHandlers[0] != nil {
-		mux.Handle("/metrics", getOnly(func(w http.ResponseWriter, r *http.Request) { metricHandlers[0].ServeHTTP(w, r) }))
+	if len(options) > 0 && options[0].Metrics != nil {
+		mux.Handle("/metrics", getOnly(func(w http.ResponseWriter, r *http.Request) { options[0].Metrics.ServeHTTP(w, r) }))
 	}
+	mux.Handle("/healthz", getOnly(func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	}))
+	mux.Handle("/readyz", getOnly(func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+		check := func(context.Context) error { return agent.Ready() }
+		if len(options) > 0 && options[0].Ready != nil {
+			check = options[0].Ready
+		}
+		if err := check(ctx); err != nil {
+			writeError(w, r, http.StatusServiceUnavailable, "not_ready", "Worker lease unavailable")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
+	}))
+
 	h := sessionHandlers{manager: workerLocal{agent}, logger: logger}
 	mux.Handle("/internal/sessions", methodOnly(http.MethodPost, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
@@ -58,13 +81,18 @@ func NewWorkerRouter(agent WorkerService, token string, logger *slog.Logger, met
 	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { writeError(w, r, 404, "not_found", "Route not found") })
 	protected := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Liveness exposes no worker metadata; readiness/metrics use the stable credential.
+		if r.URL.Path == "/healthz" {
+			mux.ServeHTTP(w, r)
+			return
+		}
 		if len(token) < 32 || len(r.Header.Values("Authorization")) != 1 || subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte("Bearer "+token)) != 1 {
 			writeError(w, r, 401, "unauthorized", "Worker authentication required")
 			return
 		}
 		// Prometheus needs only the stable worker credential. Session execution
 		// additionally requires a tenant and the current worker incarnation.
-		if r.URL.Path == "/metrics" {
+		if r.URL.Path == "/metrics" || r.URL.Path == "/readyz" {
 			mux.ServeHTTP(w, r)
 			return
 		}
