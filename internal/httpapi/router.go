@@ -57,6 +57,7 @@ func NewRouter(service KeyService, accounts AccountManager, ready func(context.C
 		writeError(w, r, http.StatusNotFound, "not_found", "Route not found")
 	})
 	mux := http.NewServeMux()
+	mountDocumentation(mux)
 	if accounts != nil {
 		mountAccountRoutes(mux, service, accounts, logger, authTimeout)
 	}

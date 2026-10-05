@@ -16,6 +16,7 @@ internal/
   httpapi/             REST routes, validation, authentication middleware
   storage/postgres/    Connection pool and persistence
 migrations/            Embedded, ordered, checksummed SQL migrations
+api/                   OpenAPI contract and bundled Swagger UI
 .vscode/settings.json  Go module proxy configuration for the editor
 compose.yaml           Local PostgreSQL service on port 6927
 .env.example           Configuration template
@@ -59,6 +60,30 @@ The API listens on `http://localhost:8080`. PostgreSQL is exposed at
 restart it after code changes. To restart the editor's Go tooling, use
 **Go: Restart Language Server** from VS Code's Command Palette. Workspace
 settings explicitly enable module downloads through the Go module proxy.
+
+## Swagger UI
+
+After starting the API, open [Swagger UI](http://localhost:8080/docs/).
+The downloadable OpenAPI 3.0.3 contract is at
+[`/openapi.json`](http://localhost:8080/openapi.json), maintained in
+[`api/openapi.json`](api/openapi.json).
+
+The UI provides examples, request/response schemas, error codes, filtering, and
+**Try it out** for every implemented API operation. Register and log in through
+the public routes, then click **Authorize** and paste `access_token` into
+**LoginSession** to generate and manage keys. Paste an issued `api_key` into
+**ApplicationBearer** or **ApplicationKeyHeader** to test `/v1/whoami`. Enter
+raw token values without adding `Bearer`.
+
+Authorization is kept only in page memory and is cleared on reload. If both
+application key methods are authorized, UI requests prefer Bearer and omit the
+duplicate `X-API-Key` header. All UI assets are bundled into the server binary;
+there is no CDN or online-validator dependency at runtime. The API server address
+comes from the current browser origin, so custom HTTP ports work too.
+
+When adding or changing an endpoint, update `api/openapi.json` alongside its Go
+handler and rebuild/restart the server. Swagger assets are pinned to 5.33.1;
+their source, package integrity, and license notices are in `api/swagger-ui/`.
 
 ## Authentication and API key flow
 

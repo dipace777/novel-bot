@@ -1,0 +1,1303 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Novel Bot API",
+    "version": "0.1.0",
+    "description": "Register an account, log in, then generate API keys for application access. Login sessions authorize account/key management; application API keys authorize automation API routes. Browser session execution is not implemented yet.\n\nUse Authorize to paste raw token values without the Bearer prefix. Authorization is not persisted across page reloads."
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "This API server (same origin as the documentation)"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Authentication",
+      "description": "Register, log in, inspect your account, and log out."
+    },
+    {
+      "name": "API Keys",
+      "description": "Manage keys for your account using a login session."
+    },
+    {
+      "name": "Application",
+      "description": "Application API key authentication."
+    },
+    {
+      "name": "Health",
+      "description": "Public liveness and readiness probes."
+    }
+  ],
+  "security": [],
+  "paths": {
+    "/v1/auth/register": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "operationId": "registerAccount",
+        "summary": "Register an account",
+        "description": "Creates a user and its application client atomically. Does not log in or generate an API key.",
+        "security": [],
+        "responses": {
+          "201": {
+            "description": "Account created.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/RequestID"
+              },
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                },
+                "example": {
+                  "user": {
+                    "id": "11111111111111111111111111111111",
+                    "client_id": "22222222222222222222222222222222",
+                    "name": "My App",
+                    "email": "owner@example.com",
+                    "created_at": "2026-10-05T08:00:00Z"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/EmailRegistered"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "413": {
+            "$ref": "#/components/responses/BodyTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "description": "Send one JSON object, at most 16 KiB. Unknown fields are rejected.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              },
+              "example": {
+                "name": "My App",
+                "email": "owner@example.com",
+                "password": "choose-a-long-unique-password"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/login": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "operationId": "login",
+        "summary": "Log in",
+        "description": "Returns a revocable login session. Sessions expire after SESSION_TTL (24 hours by default). Use access_token to authorize LoginSession.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Login successful.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/RequestID"
+              },
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                },
+                "example": {
+                  "access_token": "nb_session_11111111111111111111111111111111.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                  "token_type": "Bearer",
+                  "expires_at": "2026-10-06T08:00:00Z",
+                  "user": {
+                    "id": "11111111111111111111111111111111",
+                    "client_id": "22222222222222222222222222222222",
+                    "name": "My App",
+                    "email": "owner@example.com",
+                    "created_at": "2026-10-05T08:00:00Z"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/InvalidCredentials"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "413": {
+            "$ref": "#/components/responses/BodyTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "description": "Send one JSON object, at most 16 KiB. Unknown fields are rejected.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              },
+              "example": {
+                "email": "owner@example.com",
+                "password": "choose-a-long-unique-password"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/me": {
+      "get": {
+        "tags": [
+          "Authentication"
+        ],
+        "operationId": "getAccount",
+        "summary": "Get your account",
+        "description": "Returns the user belonging to the authenticated login session.",
+        "security": [
+          {
+            "LoginSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current account.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/RequestID"
+              },
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                },
+                "example": {
+                  "user": {
+                    "id": "11111111111111111111111111111111",
+                    "client_id": "22222222222222222222222222222222",
+                    "name": "My App",
+                    "email": "owner@example.com",
+                    "created_at": "2026-10-05T08:00:00Z"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/SessionUnauthorized"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/v1/auth/logout": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "operationId": "logout",
+        "summary": "Log out",
+        "description": "Revokes this login session immediately for subsequent requests. Other sessions and application API keys remain active. Reusing this revoked token returns 401.",
+        "security": [
+          {
+            "LoginSession": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Operation completed. Response body is empty.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/RequestID"
+              },
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/SessionUnauthorized"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/v1/api-keys": {
+      "post": {
+        "tags": [
+          "API Keys"
+        ],
+        "operationId": "createAPIKey",
+        "summary": "Generate an API key",
+        "description": "Requires a login session. The key always belongs to your account client. The secret is returned only once; store it securely.",
+        "security": [
+          {
+            "LoginSession": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "API key created. Secret shown only in this response.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/RequestID"
+              },
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              },
+              "Location": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Path identifying the new key for revocation.",
+                "example": "/v1/api-keys/33333333333333333333333333333333"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssuedKey"
+                },
+                "example": {
+                  "key": {
+                    "id": "33333333333333333333333333333333",
+                    "client_id": "22222222222222222222222222222222",
+                    "name": "production",
+                    "created_at": "2026-10-05T08:00:00Z",
+                    "expires_at": "2027-01-03T08:00:00Z"
+                  },
+                  "api_key": "nb_key_33333333333333333333333333333333.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/SessionUnauthorized"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "413": {
+            "$ref": "#/components/responses/BodyTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "description": "Send one JSON object, at most 16 KiB. Unknown fields are rejected.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateKeyRequest"
+              },
+              "example": {
+                "name": "production",
+                "ttl_seconds": 7776000
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "API Keys"
+        ],
+        "operationId": "listAPIKeys",
+        "summary": "List your API keys",
+        "description": "Lists metadata for your client, including expired and revoked keys. Never returns API key secrets or hashes.",
+        "security": [
+          {
+            "LoginSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Your key metadata. Empty list if there are no keys.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/RequestID"
+              },
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeyList"
+                },
+                "example": {
+                  "keys": [
+                    {
+                      "id": "33333333333333333333333333333333",
+                      "client_id": "22222222222222222222222222222222",
+                      "name": "production",
+                      "created_at": "2026-10-05T08:00:00Z",
+                      "expires_at": "2027-01-03T08:00:00Z"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/SessionUnauthorized"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/v1/api-keys/{id}": {
+      "delete": {
+        "tags": [
+          "API Keys"
+        ],
+        "operationId": "revokeAPIKey",
+        "summary": "Revoke an API key",
+        "description": "Revokes an owned key. Repeating revocation of an owned key succeeds. Another account cannot revoke your key; other-account IDs return 404.",
+        "security": [
+          {
+            "LoginSession": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Operation completed. Response body is empty.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/RequestID"
+              },
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/SessionUnauthorized"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Key metadata ID, not the full API key secret.",
+            "schema": {
+              "$ref": "#/components/schemas/ID"
+            },
+            "example": "33333333333333333333333333333333"
+          }
+        ]
+      }
+    },
+    "/v1/whoami": {
+      "get": {
+        "tags": [
+          "Application"
+        ],
+        "operationId": "getApplicationIdentity",
+        "summary": "Verify an application API key",
+        "description": "Use an API key through Authorization: Bearer or X-API-Key. Send exactly one credential header. Login tokens are rejected.",
+        "security": [
+          {
+            "ApplicationBearer": []
+          },
+          {
+            "ApplicationKeyHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authenticated application identity.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/RequestID"
+              },
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Principal"
+                },
+                "example": {
+                  "client_id": "22222222222222222222222222222222",
+                  "key_id": "33333333333333333333333333333333"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/KeyUnauthorized"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/healthz": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "operationId": "liveness",
+        "summary": "Check liveness",
+        "description": "Public probe; does not contact the database.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "API process is responding.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/RequestID"
+              },
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                },
+                "example": {
+                  "status": "ok"
+                }
+              }
+            }
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/readyz": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "operationId": "readiness",
+        "summary": "Check readiness",
+        "description": "Public probe; checks database connectivity and the authentication schema.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Database/schema is available.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/RequestID"
+              },
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ready"
+                },
+                "example": {
+                  "status": "ready"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/NotReady"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "LoginSession": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "Opaque login session",
+        "description": "Paste access_token returned by POST /v1/auth/login. Used only for account and API key management. Starts with nb_session_."
+      },
+      "ApplicationBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "Application API key",
+        "description": "Paste api_key returned by POST /v1/api-keys. Used for application routes. Starts with nb_key_."
+      },
+      "ApplicationKeyHeader": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key",
+        "description": "Alternative application key header. Paste the complete API key value. Use one application credential method at a time."
+      }
+    },
+    "headers": {
+      "RequestID": {
+        "description": "Server-generated request identifier.",
+        "schema": {
+          "$ref": "#/components/schemas/ID"
+        }
+      },
+      "NoStore": {
+        "description": "Responses must not be cached.",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "no-store"
+          ]
+        }
+      }
+    },
+    "schemas": {
+      "ID": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{32}$",
+        "minLength": 32,
+        "maxLength": 32,
+        "example": "22222222222222222222222222222222"
+      },
+      "Name": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100,
+        "description": "1 to 100 Unicode characters after trimming surrounding whitespace.",
+        "example": "My App"
+      },
+      "Password": {
+        "type": "string",
+        "format": "password",
+        "writeOnly": true,
+        "maxLength": 72,
+        "description": "Registration requires 12 to 72 UTF-8 bytes. Passwords are not trimmed and never returned.",
+        "example": "choose-a-long-unique-password"
+      },
+      "RegisterRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "email",
+          "password"
+        ],
+        "properties": {
+          "name": {
+            "$ref": "#/components/schemas/Name"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 254,
+            "description": "Trimmed and normalized to lowercase.",
+            "example": "owner@example.com"
+          },
+          "password": {
+            "$ref": "#/components/schemas/Password"
+          }
+        }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "email",
+          "password"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 254,
+            "example": "owner@example.com"
+          },
+          "password": {
+            "$ref": "#/components/schemas/Password"
+          }
+        }
+      },
+      "User": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "client_id",
+          "name",
+          "email",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "client_id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "name": {
+            "$ref": "#/components/schemas/Name"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "example": {
+          "id": "11111111111111111111111111111111",
+          "client_id": "22222222222222222222222222222222",
+          "name": "My App",
+          "email": "owner@example.com",
+          "created_at": "2026-10-05T08:00:00Z"
+        }
+      },
+      "UserResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "user"
+        ],
+        "properties": {
+          "user": {
+            "$ref": "#/components/schemas/User"
+          }
+        }
+      },
+      "LoginResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "access_token",
+          "token_type",
+          "expires_at",
+          "user"
+        ],
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "pattern": "^nb_session_[0-9a-f]{32}\\.[A-Za-z0-9_-]{43}$",
+            "description": "Opaque login token. Paste this value into LoginSession authorization without the Bearer prefix."
+          },
+          "token_type": {
+            "type": "string",
+            "enum": [
+              "Bearer"
+            ]
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "user": {
+            "$ref": "#/components/schemas/User"
+          }
+        }
+      },
+      "CreateKeyRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "$ref": "#/components/schemas/Name"
+          },
+          "ttl_seconds": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "maximum": 7776000,
+            "default": 7776000,
+            "nullable": true,
+            "description": "Lifetime in seconds, up to 90 days. Omit or use null for the default."
+          }
+        }
+      },
+      "APIKey": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "client_id",
+          "name",
+          "created_at",
+          "expires_at"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "client_id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "name": {
+            "$ref": "#/components/schemas/Name"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "revoked_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Present only after revocation."
+          }
+        },
+        "example": {
+          "id": "33333333333333333333333333333333",
+          "client_id": "22222222222222222222222222222222",
+          "name": "production",
+          "created_at": "2026-10-05T08:00:00Z",
+          "expires_at": "2027-01-03T08:00:00Z"
+        }
+      },
+      "IssuedKey": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "key",
+          "api_key"
+        ],
+        "properties": {
+          "key": {
+            "$ref": "#/components/schemas/APIKey"
+          },
+          "api_key": {
+            "type": "string",
+            "pattern": "^nb_key_[0-9a-f]{32}\\.[A-Za-z0-9_-]{43}$",
+            "description": "The complete secret, returned only on issuance. Save it securely."
+          }
+        }
+      },
+      "KeyList": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "keys"
+        ],
+        "properties": {
+          "keys": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/APIKey"
+            }
+          }
+        }
+      },
+      "Principal": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "client_id",
+          "key_id"
+        ],
+        "properties": {
+          "client_id": {
+            "$ref": "#/components/schemas/ID"
+          },
+          "key_id": {
+            "$ref": "#/components/schemas/ID"
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "code",
+              "message"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "example": "unauthorized"
+              },
+              "message": {
+                "type": "string",
+                "example": "A valid login session is required"
+              }
+            }
+          },
+          "request_id": {
+            "$ref": "#/components/schemas/ID"
+          }
+        }
+      },
+      "Health": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok"
+            ]
+          }
+        }
+      },
+      "Ready": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready"
+            ]
+          }
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Request validation failed. Unsupported fields, malformed JSON, invalid names, or TTL values are rejected.",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/RequestID"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/NoStore"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "invalid_input",
+                "message": "Invalid request"
+              },
+              "request_id": "44444444444444444444444444444444"
+            }
+          }
+        }
+      },
+      "BodyTooLarge": {
+        "description": "JSON request exceeds 16 KiB.",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/RequestID"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/NoStore"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "body_too_large",
+                "message": "Request body exceeds 16 KiB"
+              },
+              "request_id": "44444444444444444444444444444444"
+            }
+          }
+        }
+      },
+      "UnsupportedMediaType": {
+        "description": "Content-Type must be application/json.",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/RequestID"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/NoStore"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "unsupported_media_type",
+                "message": "Content-Type must be application/json"
+              },
+              "request_id": "44444444444444444444444444444444"
+            }
+          }
+        }
+      },
+      "EmailRegistered": {
+        "description": "An account already exists for this normalized email address.",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/RequestID"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/NoStore"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "email_registered",
+                "message": "Email already registered"
+              },
+              "request_id": "44444444444444444444444444444444"
+            }
+          }
+        }
+      },
+      "InvalidCredentials": {
+        "description": "Invalid email or password. Unknown email addresses and wrong passwords have the same response.",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/RequestID"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/NoStore"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "invalid_credentials",
+                "message": "Invalid email or password"
+              },
+              "request_id": "44444444444444444444444444444444"
+            }
+          }
+        }
+      },
+      "SessionUnauthorized": {
+        "description": "Missing, malformed, expired, or revoked login token; application API keys cannot authorize account operations.",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/RequestID"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/NoStore"
+          },
+          "WWW-Authenticate": {
+            "schema": {
+              "type": "string"
+            },
+            "example": "Bearer realm=\"account\""
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "unauthorized",
+                "message": "A valid login session is required"
+              },
+              "request_id": "44444444444444444444444444444444"
+            }
+          }
+        }
+      },
+      "KeyUnauthorized": {
+        "description": "Missing, malformed, expired, or revoked API key; login tokens cannot authorize application operations.",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/RequestID"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/NoStore"
+          },
+          "WWW-Authenticate": {
+            "schema": {
+              "type": "string"
+            },
+            "example": "Bearer realm=\"api\""
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "unauthorized",
+                "message": "A valid API key is required"
+              },
+              "request_id": "44444444444444444444444444444444"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Key does not exist or belongs to another account.",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/RequestID"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/NoStore"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "not_found",
+                "message": "Resource not found"
+              },
+              "request_id": "44444444444444444444444444444444"
+            }
+          }
+        }
+      },
+      "Unavailable": {
+        "description": "Database operation failed or timed out. Try again later.",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/RequestID"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/NoStore"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "service_unavailable",
+                "message": "Authentication service temporarily unavailable"
+              },
+              "request_id": "44444444444444444444444444444444"
+            }
+          }
+        }
+      },
+      "NotReady": {
+        "description": "The database or authentication schema is unavailable.",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/RequestID"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/NoStore"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "not_ready",
+                "message": "Database unavailable"
+              },
+              "request_id": "44444444444444444444444444444444"
+            }
+          }
+        }
+      },
+      "MethodNotAllowed": {
+        "description": "HTTP method is not supported for this route.",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/RequestID"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/NoStore"
+          },
+          "Allow": {
+            "schema": {
+              "type": "string"
+            },
+            "description": "Supported HTTP methods for this route."
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "method_not_allowed",
+                "message": "Method not allowed"
+              },
+              "request_id": "44444444444444444444444444444444"
+            }
+          }
+        }
+      },
+      "InternalError": {
+        "description": "Unexpected server error.",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/RequestID"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/NoStore"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "internal_error",
+                "message": "Unable to process request"
+              },
+              "request_id": "44444444444444444444444444444444"
+            }
+          }
+        }
+      }
+    }
+  }
+}

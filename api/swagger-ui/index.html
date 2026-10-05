@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Novel Bot API · Swagger UI</title>
+    <link rel="stylesheet" href="./swagger-ui.css">
+    <link rel="stylesheet" href="./theme.css">
+  </head>
+  <body>
+    <header class="docs-header">
+      <div class="docs-heading">
+        <span class="brand">Novel Bot <span>API</span></span>
+        <a href="../openapi.json" download="openapi.json">Download OpenAPI spec ↗</a>
+      </div>
+      <p>Browser automation platform · REST API reference</p>
+    </header>
+    <main>
+      <section class="quickstart" aria-label="Getting started">
+        <h1>From account to API key</h1>
+        <ol>
+          <li><strong>Register &amp; log in.</strong> Execute the public authentication routes below.</li>
+          <li><strong>Authorize your session.</strong> Paste <code>access_token</code> into <strong>LoginSession</strong> to manage keys.</li>
+          <li><strong>Test your app key.</strong> Paste <code>api_key</code> into <strong>ApplicationBearer</strong> or <strong>ApplicationKeyHeader</strong> to call <code>/v1/whoami</code>.</li>
+        </ol>
+        <p>Paste the token value without the <code>Bearer</code> prefix. Authorization stays in this page's memory and clears on reload.</p>
+      </section>
+      <div id="swagger-ui"></div>
+    </main>
+    <script src="./swagger-ui-bundle.js"></script>
+    <script src="./swagger-initializer.js"></script>
+  </body>
+</html>
