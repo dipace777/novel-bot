@@ -17,11 +17,6 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-var (
-	ErrConflict    = errors.New("email already registered")
-	ErrCredentials = errors.New("invalid email or password")
-)
-
 const sessionPrefix = "nb_session_"
 
 type User struct {
@@ -52,15 +47,6 @@ type Login struct {
 type AccountPrincipal struct {
 	User      User   `json:"user"`
 	SessionID string `json:"-"`
-}
-
-type AccountRepository interface {
-	// CreateAccount persists the user and its client in a single transaction.
-	CreateAccount(context.Context, User, Client) error
-	FindUserByEmail(context.Context, string) (User, error)
-	CreateSession(context.Context, Session) error
-	FindSession(context.Context, string) (Session, User, error)
-	RevokeSession(context.Context, string, string, time.Time) error
 }
 
 type AccountService struct {

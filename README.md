@@ -11,12 +11,29 @@ cmd/
   api/                 HTTP server entry point
   migrate/             Database migration executable
 internal/
-  auth/                Accounts, login sessions, API keys, repository contracts
-  config/              Environment configuration and validation
-  httpapi/             REST routes, validation, authentication middleware
-  storage/postgres/    Repository adapters and connection pool
-    queries/           Handwritten SQL query definitions
-    dbgen/             sqlc-generated Go query methods and database models
+  auth/
+    accounts.go        Registration, login, and login sessions
+    api_keys.go        API key issuance and verification
+    credentials.go     Shared credential parsing and identity validation
+    repositories.go    Storage contracts used by authentication services
+    errors.go          Shared domain errors
+  config/
+    config.go          Environment configuration and validation
+  httpapi/
+    router.go          Route wiring and HTTP method guards
+    accounts.go        Account HTTP handlers and service contract
+    api_keys.go        API key HTTP handlers and service contract
+    middleware.go      Authentication, timeouts, request IDs, panic recovery
+    responses.go       JSON parsing, responses, and error mapping
+    docs.go            OpenAPI and Swagger UI routes
+  storage/postgres/
+    pool.go                    Connection configuration
+    repository.go              Repository construction and shared query handle
+    accounts_repository.go     Account and login-session persistence
+    api_keys_repository.go     Client and API-key persistence
+    readiness.go               Authentication schema readiness check
+    queries/                   Handwritten SQL query definitions
+    dbgen/                     sqlc-generated query methods and database models
 sqlc.yaml              Query generation configuration
 migrations/            Embedded, ordered, checksummed SQL migrations
 api/                   OpenAPI contract and bundled Swagger UI
@@ -29,8 +46,15 @@ Makefile               Development and verification commands
 The HTTP layer calls authentication services, which depend on repository
 interfaces implemented by PostgreSQL. `cmd/api` wires them together. Go has no
 single mandatory project layout; `cmd` and `internal` keep executables and private
-application packages separate. Add session and worker domain packages as those
-features are implemented.
+application packages separate. Tests live beside their packages, with HTTP tests
+grouped by routes, accounts, API keys, middleware, and documentation. Shared HTTP
+test fixtures live in `test_helpers_test.go`.
+
+Keep authentication rules in `auth`, HTTP concerns in `httpapi`, and database
+mapping in `storage/postgres`. Add browser execution under `internal/sessions/`
+and `internal/workers/` when those features are implemented. The SQL files in
+`queries/` are source code; `dbgen/` is generated output and must not be edited by
+hand.
 
 ## Run locally
 

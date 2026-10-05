@@ -3,46 +3,14 @@ package postgres
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgxpool"
+
 	"novel-bot/internal/auth"
 	"novel-bot/internal/storage/postgres/dbgen"
 )
-
-func Open(ctx context.Context, url string, maxConns int32) (*pgxpool.Pool, error) {
-	cfg, err := pgxpool.ParseConfig(url)
-	if err != nil {
-		return nil, errors.New("invalid DATABASE_URL")
-	}
-	cfg.MaxConns = maxConns
-	cfg.MinConns = 0
-	cfg.MaxConnLifetime = 30 * time.Minute
-	cfg.MaxConnLifetimeJitter = 5 * time.Minute
-	cfg.MaxConnIdleTime = 5 * time.Minute
-	cfg.ConnConfig.ConnectTimeout = 5 * time.Second
-	pool, err := pgxpool.NewWithConfig(ctx, cfg)
-	if err != nil {
-		return nil, fmt.Errorf("create database pool: %w", err)
-	}
-	if err := pool.Ping(ctx); err != nil {
-		pool.Close()
-		return nil, fmt.Errorf("connect to database: %w", err)
-	}
-	return pool, nil
-}
-
-type Repository struct {
-	pool    *pgxpool.Pool
-	queries *dbgen.Queries
-}
-
-func NewRepository(pool *pgxpool.Pool) *Repository {
-	return &Repository{pool: pool, queries: dbgen.New(pool)}
-}
 
 var _ auth.Repository = (*Repository)(nil)
 
@@ -100,11 +68,6 @@ func (r *Repository) RevokeKey(ctx context.Context, clientID, id string, now tim
 		return auth.ErrNotFound
 	}
 	return nil
-}
-
-// Ready checks connectivity, schema availability, and required read permissions.
-func (r *Repository) Ready(ctx context.Context) error {
-	return r.queries.CheckAuthSchema(ctx)
 }
 
 func clientParams(client auth.Client) dbgen.CreateClientParams {

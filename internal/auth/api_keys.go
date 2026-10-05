@@ -1,4 +1,4 @@
-// Package auth implements application identity and the API key lifecycle.
+// Package auth implements accounts, login sessions, and application API keys.
 package auth
 
 import (
@@ -8,18 +8,10 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
-	"unicode/utf8"
-)
-
-var (
-	ErrUnauthorized = errors.New("invalid authentication credential")
-	ErrNotFound     = errors.New("not found")
-	ErrInvalidInput = errors.New("invalid input")
 )
 
 const keyPrefix = "nb_key_"
@@ -49,15 +41,6 @@ type IssuedKey struct {
 type Principal struct {
 	ClientID string `json:"client_id"`
 	KeyID    string `json:"key_id"`
-}
-
-// Repository implementations must be safe for concurrent use.
-type Repository interface {
-	CreateClient(context.Context, Client) error
-	CreateKey(context.Context, Key) error
-	FindKey(context.Context, string) (Key, error)
-	ListKeys(context.Context, string) ([]Key, error)
-	RevokeKey(context.Context, string, string, time.Time) error
 }
 
 type Service struct {
@@ -150,38 +133,6 @@ func (s *Service) digest(token string) []byte {
 	return mac.Sum(nil)
 }
 
-func randomID() (string, error) {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(b), nil
-}
-
-func validName(name string) bool {
-	return utf8.ValidString(name) && utf8.RuneCountInString(name) >= 1 && utf8.RuneCountInString(name) <= 100
-}
-
-func validID(id string) bool {
-	if len(id) != 32 || id != strings.ToLower(id) {
-		return false
-	}
-	_, err := hex.DecodeString(id)
-	return err == nil
-}
-
 func parseToken(token string) (string, bool) {
 	return parseTokenWithPrefix(token, keyPrefix)
-}
-
-func parseTokenWithPrefix(token, prefix string) (string, bool) {
-	if len(token) != len(prefix)+32+1+43 || !strings.HasPrefix(token, prefix) {
-		return "", false
-	}
-	id, secret, ok := strings.Cut(strings.TrimPrefix(token, prefix), ".")
-	if !ok || !validID(id) {
-		return "", false
-	}
-	b, err := base64.RawURLEncoding.Strict().DecodeString(secret)
-	return id, err == nil && len(b) == 32
 }

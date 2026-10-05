@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/bcrypt"
+
 	"novel-bot/internal/auth"
 	"novel-bot/internal/httpapi"
 	"novel-bot/internal/storage/postgres"
