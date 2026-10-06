@@ -2,7 +2,20 @@ SQLC_VERSION := v1.31.1
 SQLC := $(CURDIR)/bin/sqlc
 IMAGE_PREFIX ?= novelbot
 
-.PHONY: run build test vet db redis migrate tools generate sqlc-check loadtest run-api run-worker up down capacity test-integration test-e2e images-test check release scan-release
+.PHONY: run build test vet db redis migrate tools generate sqlc-check loadtest run-api run-worker up down capacity test-integration test-e2e images-test check release scan-release run-ui build-ui check-ui test-ui
+
+run-ui:
+	pnpm --dir ui dev
+
+build-ui:
+	pnpm --dir ui build
+
+check-ui:
+	pnpm --dir ui generate-routes
+	pnpm --dir ui typecheck
+
+test-ui:
+	pnpm --dir ui test
 
 run: run-api
 

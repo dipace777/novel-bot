@@ -1,14 +1,11 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, Navigate } from '@tanstack/react-router'
+import { useAuth } from '../features/auth/auth-provider'
+import { LoadingScreen } from '../components/icon'
 
 export const Route = createFileRoute('/')({ component: Home })
 
 function Home() {
-  return (
-    <div className="p-8">
-      <h1 className="text-4xl font-bold">Welcome to TanStack Start</h1>
-      <p className="mt-4 text-lg">
-        Edit <code>src/routes/index.tsx</code> to get started.
-      </p>
-    </div>
-  )
+  const auth = useAuth()
+  if (auth.loading) return <LoadingScreen />
+  return <Navigate to={auth.session ? '/api-keys' : '/login'} replace />
 }

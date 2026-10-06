@@ -8,7 +8,9 @@
   "scripts": {
     "dev": "vite dev --port 3000",
     "generate-routes": "tsr generate",
-    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "playwright test",
+    "build": "pnpm generate-routes && pnpm typecheck && vite build",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -21,6 +23,7 @@
     "tailwindcss": "^4.1.18"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@tanstack/devtools-vite": "0.8.5",
     "@tanstack/router-cli": "^1.132.0",
     "@tanstack/router-plugin": "1.168.42",

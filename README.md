@@ -125,6 +125,24 @@ restart it after code changes. To restart the editor's Go tooling, use
 **Go: Restart Language Server** from VS Code's Command Palette. Workspace
 settings explicitly enable module downloads through the Go module proxy.
 
+## Developer console
+
+The React UI supports account registration, login, logout, and API-key creation
+and revocation. With the API running, start it in another terminal:
+
+```sh
+pnpm --dir ui install --frozen-lockfile
+make run-ui
+```
+
+Open [the developer console](http://localhost:3000). Create an account or sign in,
+then create a key and copy its secret from the one-time dialog. Account and key
+management do not require a running browser worker.
+
+`make check-ui`, `make build-ui`, and `make test-ui` verify the frontend. See
+[ui/README.md](ui/README.md) for API proxy configuration, browser-test setup,
+session storage behavior, and production hosting requirements.
+
 ## Swagger UI
 
 After starting the API, open [Swagger UI](http://localhost:8080/docs/).
