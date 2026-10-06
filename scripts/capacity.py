@@ -69,7 +69,7 @@ def main():
                AUTH_REQUESTS_PER_MINUTE='1000', AUTH_TIMEOUT='2s', SESSION_TTL='24h',
                COMPOSE_API_MEMORY='512m', COMPOSE_API_CPUS='1', COMPOSE_API_PIDS_LIMIT='128',
                BROWSER_SESSION_TTL='15m', BROWSER_STARTUP_TIMEOUT='10s', SESSION_STARTUP_TIMEOUT='10s',
-               WORKER_LEASE_TTL='15s', DB_MAX_CONNS='20', PUBLIC_API_URL='', TRUSTED_PROXY_CIDRS='',
+               WORKER_LEASE_TTL='15s', WORKER_DRAIN_TIMEOUT='1s', WORKER_STOP_GRACE_PERIOD='31s', DB_MAX_CONNS='20', PUBLIC_API_URL='', TRUSTED_PROXY_CIDRS='',
                LOADTEST_WORKER_TOKEN='')
     services = ['api', 'migrate', 'worker-a', 'fixtures']
     compose_args = ['docker', 'compose', '--env-file', '/dev/null', '-p', project,

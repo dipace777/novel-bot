@@ -37,7 +37,7 @@ func startRole(t *testing.T, binary string, env map[string]string) *childProcess
 	t.Helper()
 	cmd := exec.Command(binary)
 	// Strip role settings from the parent so the test's configuration is deterministic.
-	settings := []string{"DATABASE_URL", "DB_MAX_CONNS", "API_KEY_PEPPER", "HTTP_ADDR", "AUTH_TIMEOUT", "AUTH_REQUESTS_PER_MINUTE", "TRUSTED_PROXY_CIDRS", "SESSION_TTL", "SESSION_STARTUP_TIMEOUT", "PUBLIC_API_URL", "REDIS_URL", "REDIS_NAMESPACE", "WORKER_AUTH_TOKEN", "WORKER_ID", "WORKER_HTTP_ADDR", "WORKER_URL", "WORKER_LEASE_TTL", "CHROMIUM_PATH", "BROWSER_PROFILE_DIR", "BROWSER_HEADLESS", "BROWSER_MAX_SESSIONS", "BROWSER_SESSION_TTL", "BROWSER_STARTUP_TIMEOUT", "METRICS_SAMPLE_INTERVAL"}
+	settings := []string{"DATABASE_URL", "DB_MAX_CONNS", "API_KEY_PEPPER", "HTTP_ADDR", "AUTH_TIMEOUT", "AUTH_REQUESTS_PER_MINUTE", "TRUSTED_PROXY_CIDRS", "SESSION_TTL", "SESSION_STARTUP_TIMEOUT", "PUBLIC_API_URL", "REDIS_URL", "REDIS_NAMESPACE", "WORKER_AUTH_TOKEN", "WORKER_ID", "WORKER_HTTP_ADDR", "WORKER_URL", "WORKER_LEASE_TTL", "WORKER_DRAIN_TIMEOUT", "WORKER_STOP_GRACE_PERIOD", "CHROMIUM_PATH", "BROWSER_PROFILE_DIR", "BROWSER_HEADLESS", "BROWSER_MAX_SESSIONS", "BROWSER_SESSION_TTL", "BROWSER_STARTUP_TIMEOUT", "METRICS_SAMPLE_INTERVAL"}
 	for _, v := range os.Environ() {
 		key, _, _ := strings.Cut(v, "=")
 		skip := false
@@ -284,13 +284,20 @@ func TestIndependentAPIAndWorkerProcesses(t *testing.T) {
 	}
 	profiles := []string{t.TempDir(), t.TempDir()}
 	workers := make([]*childProcess, 2)
-	for i, name := range []string{"a", "b"} {
+	privateOrigins := map[string]string{}
+	startWorker := func(i int) *childProcess {
+		name := []string{"a", "b"}[i]
 		private := freeOrigin(t)
-		workers[i] = startRole(t, workerBinary, map[string]string{"DATABASE_URL": "", "API_KEY_PEPPER": "invalid", "HTTP_ADDR": "invalid", "WORKER_ID": name, "WORKER_HTTP_ADDR": strings.TrimPrefix(private, "http://"), "WORKER_URL": private, "WORKER_AUTH_TOKEN": testWorkerCredential, "REDIS_URL": redisURL, "REDIS_NAMESPACE": schema, "CHROMIUM_PATH": chrome, "BROWSER_HEADLESS": "true", "BROWSER_PROFILE_DIR": profiles[i], "BROWSER_MAX_SESSIONS": "1", "BROWSER_SESSION_TTL": "1m", "BROWSER_STARTUP_TIMEOUT": "10s", "WORKER_LEASE_TTL": "3s", "METRICS_SAMPLE_INTERVAL": "250ms"})
-		awaitRole(t, workers[i], private, testWorkerCredential)
+		child := startRole(t, workerBinary, map[string]string{"DATABASE_URL": "", "API_KEY_PEPPER": "invalid", "HTTP_ADDR": "invalid", "WORKER_ID": name, "WORKER_HTTP_ADDR": strings.TrimPrefix(private, "http://"), "WORKER_URL": private, "WORKER_AUTH_TOKEN": testWorkerCredential, "REDIS_URL": redisURL, "REDIS_NAMESPACE": schema, "CHROMIUM_PATH": chrome, "BROWSER_HEADLESS": "true", "BROWSER_PROFILE_DIR": profiles[i], "BROWSER_MAX_SESSIONS": "1", "BROWSER_SESSION_TTL": "1m", "BROWSER_STARTUP_TIMEOUT": "10s", "WORKER_LEASE_TTL": "3s", "WORKER_DRAIN_TIMEOUT": "5s", "METRICS_SAMPLE_INTERVAL": "250ms"})
+		awaitRole(t, child, private, testWorkerCredential)
 		if status, _ := processRequest(t, "GET", private+"/readyz", "", ""); status != 401 {
 			t.Fatal("worker readiness exposed", status)
 		}
+		privateOrigins[name] = private
+		return child
+	}
+	for i := range workers {
+		workers[i] = startWorker(i)
 	}
 	create := func() sessions.Record {
 		t.Helper()
@@ -356,7 +363,62 @@ func TestIndependentAPIAndWorkerProcesses(t *testing.T) {
 	if status, _ := processRequest(t, "DELETE", public+"/sessions/"+replacement.ID, issued.APIKey, ""); status != 204 {
 		t.Fatal("replacement deletion failed", status)
 	}
-	stopRole(t, workers[1-lost])
+	// Restart the fenced worker, then SIGTERM a busy worker. Existing CDP must
+	// survive while new placement moves to the other worker.
+	workers[lost] = startWorker(lost)
+	draining, occupied := create(), create()
+	target := 0
+	if draining.WorkerID == "b" {
+		target = 1
+	}
+	activeConnection := processCDP(t, public, draining.ID, issued.APIKey)
+	if err := workers[target].cmd.Process.Signal(os.Interrupt); err != nil {
+		t.Fatal(err)
+	}
+	until := time.Now().Add(2 * time.Second)
+	for {
+		status, data := processRequest(t, "GET", privateOrigins[draining.WorkerID]+"/internal/status", testWorkerCredential, "")
+		var state sessions.WorkerStatus
+		if status == 200 && json.Unmarshal(data, &state) == nil && state.State == sessions.WorkerDraining {
+			break
+		}
+		if time.Now().After(until) {
+			t.Fatal("SIGTERM did not start drain")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	for i := 0; i < 2; i++ {
+		if status, _ := processRequest(t, "POST", privateOrigins[draining.WorkerID]+"/internal/drain", testWorkerCredential, ""); status != 202 {
+			t.Fatal("duplicate drain failed", status)
+		}
+	}
+	if status, _ := processRequest(t, "GET", privateOrigins[draining.WorkerID]+"/readyz", testWorkerCredential, ""); status != 503 {
+		t.Fatal("draining worker remained ready")
+	}
+	if status, _ := processRequest(t, "DELETE", public+"/sessions/"+occupied.ID, issued.APIKey, ""); status != 204 {
+		t.Fatal("other worker delete failed")
+	}
+	duringDrain := create()
+	if duringDrain.WorkerID == draining.WorkerID {
+		t.Fatal("placement selected draining worker")
+	}
+	assertCDPVersion(t, activeConnection)
+	processCDP(t, public, draining.ID, issued.APIKey)
+	if status, _ := processRequest(t, "DELETE", public+"/sessions/"+draining.ID, issued.APIKey, ""); status != 204 {
+		t.Fatal("draining worker delete failed")
+	}
+	select {
+	case <-workers[target].done:
+		if workers[target].err != nil {
+			t.Fatal("planned drain failed", workers[target].err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("drained process did not exit")
+	}
+	if status, _ := processRequest(t, "DELETE", public+"/sessions/"+duringDrain.ID, issued.APIKey, ""); status != 204 {
+		t.Fatal("other worker cleanup failed")
+	}
+	stopRole(t, workers[1-target])
 	for _, dir := range profiles {
 		entries, err := os.ReadDir(filepath.Clean(dir))
 		if err != nil || len(entries) != 0 {

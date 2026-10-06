@@ -11,13 +11,37 @@ import (
 	"novel-bot/internal/sessions"
 )
 
-type workerStub struct{}
+type workerStub struct{ draining bool }
 
 func (workerStub) Stats() sessions.Stats {
 	return sessions.Stats{Capacity: 10, Reserved: 3, Starting: 1, Active: 2}
 }
 func (workerStub) Ready() error        { return nil }
 func (workerStub) PendingCleanup() int { return 1 }
+func (w workerStub) Status() sessions.WorkerStatus {
+	s := sessions.WorkerStatus{State: sessions.WorkerReady, Accepting: true, LeaseValid: true}
+	if w.draining {
+		s.State = sessions.WorkerDraining
+		s.Accepting = false
+	}
+	return s
+}
+
+func TestDrainMetricsKeepLeaseHealthSeparateFromAdmission(t *testing.T) {
+	m := New("draining-worker")
+	m.Bind(workerStub{draining: true})
+	response := httptest.NewRecorder()
+	m.Handler().ServeHTTP(response, httptest.NewRequest("GET", "/metrics", nil))
+	for _, metric := range []string{
+		`novelbot_worker_ready{worker_id="draining-worker"} 1`,
+		`novelbot_worker_draining{worker_id="draining-worker"} 1`,
+		`novelbot_worker_accepting_sessions{worker_id="draining-worker"} 0`,
+	} {
+		if !strings.Contains(response.Body.String(), metric) {
+			t.Errorf("missing %s", metric)
+		}
+	}
+}
 func TestExporterReportsLifecycleAndWorkerState(t *testing.T) {
 	m := New("worker-a")
 	m.Bind(workerStub{})

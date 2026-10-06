@@ -68,10 +68,61 @@ are ephemeral and are not recreated after worker loss.
 
 Stopping an API closes its REST/CDP connections while leaving worker browsers
 alive until deletion, TTL, or worker failure. Clients can reconnect through a
-healthy API using the same session ID. Stopping a worker retires its registration,
-kills its browsers, releases reservations, and closes the related CDP streams.
+healthy API using the same session ID. SIGTERM/interrupt makes a worker drain:
+new placement stops, while its lease, existing browsers, CDP connections and
+reconnections, deletion, and expiry continue. The worker exits after its sessions
+and admitted create calls finish, or forces cleanup at `WORKER_DRAIN_TIMEOUT`
+(default `15m`). A healthy drain exits successfully; lease loss still fences
+immediately and exits nonzero. Redis treats expired/unregistered workers as
+unavailable, and heartbeats cannot reset a draining incarnation to ready.
 For abrupt worker death, Redis expiry reconciles capacity and the container
 runtime must kill any remaining Chromium children.
+
+## Worker maintenance / draining
+
+Private control endpoints require `Authorization: Bearer WORKER_AUTH_TOKEN`;
+application keys and login tokens cannot use them. They need no tenant or
+incarnation headers and never return routing credentials.
+
+| Endpoint | Behavior |
+| --- | --- |
+| `POST /internal/drain` | Returns `202` with worker status after Redis confirms draining; repeats do not extend the deadline |
+| `GET /internal/status` | Reports state, lease health, admission, drain timestamps/confirmation, forced cleanup, session counts, in-flight creates, and pending releases |
+| `GET /readyz` | Returns `503` while draining, indicating no new admission |
+| `GET /healthz` | Remains `200` while the listener is alive |
+| `GET /metrics` | Remains available during drain with the private credential |
+
+Launches admitted locally before drain may finish and publish. Reservations whose
+RPC arrives after local admission closes are rejected with `503 worker_draining`
+and released (or queued for release retry). Clients may retry through the public
+API; the next allocation excludes the draining worker. No session is migrated.
+
+If the Redis drain write fails, the endpoint returns `503 drain_unavailable` but
+local admission stays closed and the original deadline remains fixed. A heartbeat
+also carries the draining state when Redis recovers. Existing sessions continue
+only while the lease remains valid; Redis outages never extend ownership.
+
+For a native worker, this loads the credential from `.env`:
+
+```sh
+./scripts/with-env.sh sh -c 'curl -fsS -X POST http://127.0.0.1:8090/internal/drain -H "Authorization: Bearer $WORKER_AUTH_TOKEN"'
+./scripts/with-env.sh sh -c 'curl -fsS http://127.0.0.1:8090/internal/status -H "Authorization: Bearer $WORKER_AUTH_TOKEN"'
+```
+
+The drain call initiates shutdown asynchronously; poll while it drains, then use
+the supervisor/container state to confirm exit. Empty workers may exit before a
+subsequent status request. Restart explicitly after a completed maintenance drain.
+Compose workers use `restart: on-failure`: planned drains stay stopped, while
+lease-loss/process failures restart. API restart policy is unchanged.
+
+`WORKER_STOP_GRACE_PERIOD` controls Compose's stop deadline (default `16m`). If
+provided, worker configuration validates at least `WORKER_DRAIN_TIMEOUT + 30s`
+for bounded lease/cleanup/HTTP shutdown work. Increase both when extending drain.
+Other supervisors/orchestrators must provide the same margin. Use `/healthz` for
+liveness and `/readyz` for new-session readiness; readiness failure during drain
+must not trigger a restart or remove private routes used by existing sessions.
+Private worker addresses must remain reachable throughout draining; this also
+applies to future Kubernetes Service/Endpoint routing and rollout hooks.
 
 ## Docker Compose
 
@@ -128,7 +179,7 @@ The report should show sessions on both workers. For a failure drill on a dedica
 development deployment, keep sessions open and stop one worker:
 
 ```sh
-# Graceful failure/maintenance: terminates this worker's browsers immediately.
+# Maintenance: stops new placement, waits for active sessions, then exits.
 docker compose --profile app stop worker-a
 
 # API remains ready; worker B continues serving and accepting sessions.
@@ -148,7 +199,8 @@ stop worker browsers, so reconnect after the restart.
 The optional process integration test uses built API/worker binaries, two real
 Chromium workers, an isolated PostgreSQL schema and Redis namespace. It checks API
 readiness without workers, creation/CDP routing across workers, API restart and
-reconnection, worker lease loss, and surviving-worker capacity/cleanup:
+reconnection, worker lease loss, surviving-worker capacity/cleanup, and SIGTERM
+draining with live CDP/reconnection and new placement on the other worker:
 
 ```sh
 make build

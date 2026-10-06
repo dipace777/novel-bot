@@ -14,6 +14,7 @@ type WorkerConfig struct {
 	WorkerURL             string
 	WorkerAuthToken       string
 	WorkerLeaseTTL        time.Duration
+	WorkerDrainTimeout    time.Duration
 	ChromiumPath          string
 	BrowserHeadless       bool
 	BrowserProfileDir     string
@@ -44,6 +45,15 @@ func LoadWorker() (WorkerConfig, error) {
 	}
 	if cfg.WorkerLeaseTTL, err = duration("WORKER_LEASE_TTL", 15*time.Second, 3*time.Second, 5*time.Minute); err != nil {
 		return WorkerConfig{}, err
+	}
+	if cfg.WorkerDrainTimeout, err = duration("WORKER_DRAIN_TIMEOUT", 15*time.Minute, time.Second, 24*time.Hour); err != nil {
+		return WorkerConfig{}, err
+	}
+	// Compose uses this same optional value for the container's stop deadline.
+	if os.Getenv("WORKER_STOP_GRACE_PERIOD") != "" {
+		if _, err := duration("WORKER_STOP_GRACE_PERIOD", 16*time.Minute, cfg.WorkerDrainTimeout+30*time.Second, 25*time.Hour); err != nil {
+			return WorkerConfig{}, err
+		}
 	}
 	cfg.ChromiumPath = os.Getenv("CHROMIUM_PATH")
 	if cfg.BrowserHeadless, err = strconv.ParseBool(value("BROWSER_HEADLESS", "true")); err != nil {

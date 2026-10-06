@@ -47,21 +47,21 @@ isolated profiles also does not establish a security boundary between tenants.
 
 ## Ordered implementation tasks
 
-### 01. Worker draining and bounded graceful shutdown — next task
+### 01. Worker draining and bounded graceful shutdown — complete
 
-- [ ] Add worker admission state to Redis: ready, draining, and unavailable;
+- [x] Add worker admission state to Redis: ready, draining, and unavailable;
   preserve existing session routing while atomically excluding draining workers
   from new reservations. Heartbeat renewal must never reset draining to ready.
-- [ ] Separate lease health from acceptance of new sessions. Keep heartbeats,
+- [x] Separate lease health from acceptance of new sessions. Keep heartbeats,
   existing CDP connections/reconnections, deletion, and expiry working while draining.
-- [ ] Handle reservations made just before drain begins: define whether they
+- [x] Handle reservations made just before drain begins: define whether they
   finish or are rejected/released, and test the race without leaking quota.
-- [ ] Add an idempotent, authenticated private drain operation, status reporting,
+- [x] Add an idempotent, authenticated private drain operation, status reporting,
   drain metrics, and configurable maximum drain duration. A worker may exit only
   after browsers and in-flight launches finish or bounded forced cleanup completes.
-- [ ] Make SIGTERM enter draining. Lease loss must still fence immediately;
+- [x] Make SIGTERM enter draining. Lease loss must still fence immediately;
   draining must never extend the right to run browsers after lease expiry.
-- [ ] Align container/deployment termination deadlines with the drain deadline
+- [x] Align container/deployment termination deadlines with the drain deadline
   and cleanup margin; retain liveness and private routing during that interval.
 
 **Done when:** a two-worker real-browser test proves an existing session on A
@@ -71,7 +71,44 @@ deadline, and Redis outage during drain. Starting points: `internal/worker`,
 `internal/sessions`, `internal/storage/redis`, `internal/httpapi/worker.go`,
 `cmd/worker`, and `docs/processes.md`.
 
-### 02. Automated CI and reproducible releases
+**Implemented policy:** launches admitted locally before draining may finish and
+publish. Later arrivals, including older Redis reservations, receive `503
+worker_draining` and release their reservation; transient release failures retry.
+Redis preserves draining across renewals and excludes it from new reservations.
+Unavailable means an expired/unregistered lease, with local status reporting
+`unavailable`; Redis does not keep an indefinitely stale worker entry.
+
+**Validation (6 October 2026):** `go test -race ./...`, `go vet ./...`,
+`make build`, and `docker compose --profile app build api worker-a` passed.
+Integration suites ran against temporary, isolated PostgreSQL/Redis containers
+with real Chromium and built API/worker binaries; required tests executed rather
+than skipped. PostgreSQL tests passed with `go test -race -count=1 -v
+./internal/storage/postgres`; Redis and HTTP tests passed with `go test -race
+-count=1 -v ./internal/storage/redis ./internal/httpapi` with `TEST_DATABASE_URL`,
+`TEST_REDIS_URL`, `TEST_CHROMIUM_PATH`, `TEST_API_BINARY`, and `TEST_WORKER_BINARY`
+set for that isolated run. Evidence:
+
+- [Worker lifecycle tests](internal/worker/drain_test.go): admitted startup,
+  late reservations, duplicate requests, pending Redis confirmation, forced
+  deadline, lease loss during an outage, and retrying quota cleanup.
+- [Redis integration tests](internal/storage/redis/drain_integration_test.go):
+  concurrent placement, renewal/registration persistence, publication and routing
+  during drain, and incarnation fencing.
+- [Two-worker browser test](internal/httpapi/drain_integration_test.go): existing
+  CDP/reconnect/delete on A, new placement on B, and clean drain completion.
+- [Separate-process test](internal/httpapi/processes_integration_test.go): signal
+  draining, preserved CDP routing, zero-exit worker shutdown, profile cleanup,
+  API restart, and lease fencing.
+
+Compose now allows `WORKER_DRAIN_TIMEOUT=15m` plus a
+`WORKER_STOP_GRACE_PERIOD=16m` termination budget. Supplied termination budgets
+are validated against the drain deadline plus at least 30 seconds for cleanup.
+Planned drains stay stopped; failures restart. See [operator commands and private
+routing requirements](docs/processes.md#worker-maintenance--draining). Production
+orchestrator manifests/hooks remain task 07; real network-partition qualification
+remains task 10.
+
+### 02. Automated CI and reproducible releases — next task
 
 - [ ] Add CI for formatting, race tests, vet, binary builds, and sqlc consistency.
 - [ ] Add Testcontainers for Go helpers to provision PostgreSQL and Redis with
@@ -332,3 +369,4 @@ would require its own scheduler, quotas, and execution lifecycle.
 | Date | Task | Result / evidence | Remaining limitation |
 | --- | --- | --- | --- |
 | 2026-10-06 | Roadmap baseline | Reviewed current API/worker/Redis/auth implementation and recorded ordered tasks. Capacity evidence linked above. | Production gates remain open; next implementation is task 01. |
+| 2026-10-06 | 01 — worker draining | Completed all task 01 criteria; race/vet/build checks, Docker image builds, isolated Redis/PostgreSQL integration suites, and two-worker real-browser/process shutdown tests passed. Commands and evidence paths are recorded above. | Deployment alignment covers Compose; production orchestrator routing/hooks remain task 07 and real network-partition qualification remains task 10. Testcontainers/CI are next in task 02. |

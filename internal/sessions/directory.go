@@ -11,12 +11,37 @@ import (
 )
 
 var ErrLeaseLost = errors.New("worker lease unavailable or owned by another incarnation")
+var ErrDraining = errors.New("worker is draining")
+
+type WorkerState string
+
+const (
+	WorkerReady       WorkerState = "ready"
+	WorkerDraining    WorkerState = "draining"
+	WorkerUnavailable WorkerState = "unavailable"
+)
 
 type Worker struct {
-	ID       string `json:"id"`
-	Token    string `json:"token"` // Unique for each process incarnation.
-	URL      string `json:"url"`
-	Capacity int    `json:"capacity"`
+	ID       string      `json:"id"`
+	Token    string      `json:"token"` // Unique for each process incarnation.
+	URL      string      `json:"url"`
+	Capacity int         `json:"capacity"`
+	State    WorkerState `json:"state"`
+}
+
+// WorkerStatus exposes operational state without routing credentials.
+type WorkerStatus struct {
+	WorkerID        string      `json:"worker_id"`
+	State           WorkerState `json:"state"`
+	LeaseValid      bool        `json:"lease_valid"`
+	Accepting       bool        `json:"accepting_sessions"`
+	DrainStartedAt  *time.Time  `json:"drain_started_at,omitempty"`
+	DrainDeadline   *time.Time  `json:"drain_deadline,omitempty"`
+	Forced          bool        `json:"forced_cleanup"`
+	DrainPublishing bool        `json:"drain_confirmation_pending"`
+	InFlightCreates int         `json:"in_flight_creates"`
+	PendingCleanup  int         `json:"cleanup_pending"`
+	Sessions        Stats       `json:"sessions"`
 }
 
 type Record struct {
@@ -39,6 +64,7 @@ func (r Record) Session() Session {
 type Directory interface {
 	Register(context.Context, Worker, time.Duration) error
 	Renew(context.Context, Worker, time.Duration) error
+	Drain(context.Context, Worker) error
 	Unregister(context.Context, Worker) error
 	Reserve(context.Context, string, string, time.Duration, limits.Policy) (Record, error)
 	Lookup(context.Context, string, string, string) (Record, error)

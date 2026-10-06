@@ -65,7 +65,7 @@ func run(logger *slog.Logger) error {
 	defer listener.Close()
 	metrics := observability.New(cfg.WorkerID)
 	startup, cancel = context.WithTimeout(ctx, 5*time.Second)
-	agent, err := worker.NewAgent(startup, directory, launcher, sessions.Worker{ID: cfg.WorkerID, URL: cfg.WorkerURL}, sessions.Options{Observer: metrics, MaxSessions: cfg.BrowserMaxSessions, TTL: cfg.BrowserSessionTTL, StartupTimeout: cfg.BrowserStartupTimeout}, cfg.WorkerLeaseTTL, logger)
+	agent, err := worker.NewAgent(startup, directory, launcher, sessions.Worker{ID: cfg.WorkerID, URL: cfg.WorkerURL}, sessions.Options{Observer: metrics, MaxSessions: cfg.BrowserMaxSessions, TTL: cfg.BrowserSessionTTL, StartupTimeout: cfg.BrowserStartupTimeout}, cfg.WorkerLeaseTTL, cfg.WorkerDrainTimeout, logger)
 	cancel()
 	if err != nil {
 		return fmt.Errorf("register worker: %w", err)
@@ -109,10 +109,25 @@ func run(logger *slog.Logger) error {
 			result = err
 		}
 	case <-agent.Done():
-		result = sessions.ErrLeaseLost
+		result = agent.Err()
 	case <-ctx.Done():
+		// Keep the listener, sampling, and lease alive while existing sessions drain.
+		drain, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		err := agent.BeginDrain(drain)
+		cancel()
+		if err != nil {
+			logger.Warn("drain publication failed; local admission stopped")
+		}
+		select {
+		case <-agent.Done():
+			result = agent.Err()
+		case err := <-stopped:
+			if !errors.Is(err, http.ErrServerClosed) {
+				result = err
+			}
+		}
 	}
-	// Retire the lease and stop browsers/hijacked CDP connections before HTTP drain.
+	// Retire routing and finish bounded browser cleanup before HTTP shutdown.
 	cleanup, finish := context.WithTimeout(context.Background(), 15*time.Second)
 	defer finish()
 	if err := agent.Close(cleanup); err != nil && result == nil {

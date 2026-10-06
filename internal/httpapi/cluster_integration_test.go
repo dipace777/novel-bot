@@ -76,7 +76,7 @@ func clusterWorker(t *testing.T, d sessions.Directory, id string, launcher sessi
 	server := httptest.NewUnstartedServer(nil)
 	origin := "http://" + server.Listener.Addr().String()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	a, err := worker.NewAgent(context.Background(), d, launcher, sessions.Worker{ID: id, URL: origin}, sessions.Options{MaxSessions: 1, TTL: time.Minute, StartupTimeout: 5 * time.Second}, 5*time.Second, logger)
+	a, err := worker.NewAgent(context.Background(), d, launcher, sessions.Worker{ID: id, URL: origin}, sessions.Options{MaxSessions: 1, TTL: time.Minute, StartupTimeout: 5 * time.Second}, 5*time.Second, 5*time.Second, logger)
 	if err != nil {
 		server.Close()
 		t.Fatal(err)

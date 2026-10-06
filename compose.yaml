@@ -106,8 +106,8 @@ services:
       memswap_limit: ${COMPOSE_WORKER_MEMORY:-4g}
       cpus: ${COMPOSE_WORKER_CPUS:-4}
       pids_limit: ${COMPOSE_WORKER_PIDS_LIMIT:-2048}
-      stop_grace_period: 20s
-      restart: unless-stopped
+      stop_grace_period: ${WORKER_STOP_GRACE_PERIOD:-16m}
+      restart: on-failure
     environment:
       <<: &worker-env
         REDIS_URL: redis://redis:6379/0
@@ -115,6 +115,8 @@ services:
         WORKER_AUTH_TOKEN: ${WORKER_AUTH_TOKEN:-}
         WORKER_HTTP_ADDR: :8090
         WORKER_LEASE_TTL: ${WORKER_LEASE_TTL:-15s}
+        WORKER_DRAIN_TIMEOUT: ${WORKER_DRAIN_TIMEOUT:-15m}
+        WORKER_STOP_GRACE_PERIOD: ${WORKER_STOP_GRACE_PERIOD:-16m}
         BROWSER_MAX_SESSIONS: ${COMPOSE_WORKER_MAX_SESSIONS:-6}
         # Container workers have no desktop display; use a native worker for headed testing.
         BROWSER_HEADLESS: "true"

@@ -37,7 +37,7 @@ func TestChromiumLoadTestCapacityReport(t *testing.T) {
 	private := httptest.NewUnstartedServer(nil)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	metrics := observability.New("capacity-smoke")
-	agent, err := worker.NewAgent(context.Background(), d, launcher, sessions.Worker{ID: "capacity-smoke", URL: "http://" + private.Listener.Addr().String()}, sessions.Options{MaxSessions: 3, TTL: time.Minute, StartupTimeout: 15 * time.Second, Observer: metrics}, 5*time.Second, logger)
+	agent, err := worker.NewAgent(context.Background(), d, launcher, sessions.Worker{ID: "capacity-smoke", URL: "http://" + private.Listener.Addr().String()}, sessions.Options{MaxSessions: 3, TTL: time.Minute, StartupTimeout: 15 * time.Second, Observer: metrics}, 5*time.Second, 5*time.Second, logger)
 	if err != nil {
 		private.Close()
 		t.Fatal(err)

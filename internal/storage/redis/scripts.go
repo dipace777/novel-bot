@@ -26,9 +26,23 @@ local old = redis.call('GET', KEYS[1])
 local worker = cjson.decode(ARGV[1])
 if ARGV[3] == 'renew' and not old then return -1 end
 if old and cjson.decode(old).token ~= worker.token then return -1 end
-redis.call('SET', KEYS[1], ARGV[1], 'PX', ARGV[2])
+if not worker.state or worker.state == '' then worker.state = 'ready' end
+-- A heartbeat or repeated registration of this incarnation cannot undo drain.
+if old and cjson.decode(old).state == 'draining' then worker.state = 'draining' end
+redis.call('SET', KEYS[1], cjson.encode(worker), 'PX', ARGV[2])
 redis.call('ZREMRANGEBYSCORE', KEYS[2], '-inf', now)
 redis.call('ZADD', KEYS[2], now + tonumber(ARGV[2]), worker.id)
+return 1
+`)
+
+var drainScript = goredis.NewScript(`
+local data = redis.call('GET', KEYS[1])
+if not data then return 0 end
+local worker = cjson.decode(data)
+if worker.token ~= ARGV[1] then return 0 end
+worker.state = 'draining'
+-- Changing admission must not extend ownership beyond the current lease.
+redis.call('SET', KEYS[1], cjson.encode(worker), 'KEEPTTL')
 return 1
 `)
 
@@ -81,7 +95,7 @@ for _, id in ipairs(ids) do
   local slots = ARGV[1] .. 'slots:' .. worker.id .. ':' .. worker.token
   redis.call('ZREMRANGEBYSCORE', slots, '-inf', now)
   local count = redis.call('ZCARD', slots)
-  if count < worker.capacity and count/worker.capacity < ratio then best = worker; ratio = count/worker.capacity end
+  if (not worker.state or worker.state == 'ready') and count < worker.capacity and count/worker.capacity < ratio then best = worker; ratio = count/worker.capacity end
  end
 end
 if not best then return nil end

@@ -13,6 +13,11 @@ import (
 
 type metricsWorkerStub struct{}
 
+func (metricsWorkerStub) BeginDrain(context.Context) error { return nil }
+func (metricsWorkerStub) Status() sessions.WorkerStatus {
+	return sessions.WorkerStatus{State: sessions.WorkerReady, Accepting: true, LeaseValid: true}
+}
+
 func (metricsWorkerStub) Worker() sessions.Worker {
 	return sessions.Worker{ID: "worker", Token: "incarnation"}
 }

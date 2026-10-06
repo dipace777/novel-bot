@@ -25,6 +25,10 @@ URLs, or PID labels are exported.
 | `novelbot_worker_starting_sessions` | Launches in progress |
 | `novelbot_worker_active_sessions` | Ready/stopping local sessions |
 | `novelbot_worker_ready` | Local worker lease valid: 1, fenced: 0 |
+| `novelbot_worker_accepting_sessions` | New-session admission available: 1, draining/fenced: 0 |
+| `novelbot_worker_draining` | Draining with a valid lease: 1, otherwise: 0 |
+| `novelbot_worker_drain_deadline_seconds` | Drain deadline Unix timestamp; 0 before drain |
+| `novelbot_worker_inflight_creates` | Admitted create RPCs through publication/cleanup |
 | `novelbot_browser_rss_bytes` | Sum of RSS across all owned Chromium process groups |
 | `novelbot_browser_rss_max_bytes` | Largest RSS sum for one browser process group in the latest sample |
 | `novelbot_browser_processes` | Sampled Chrome processes, including renderers and helpers in those groups |
@@ -34,6 +38,10 @@ URLs, or PID labels are exported.
 | `novelbot_browser_memory_sample_interval_seconds` | Background sampling interval |
 | `novelbot_worker_cleanup_pending` | Stopped browser directory releases awaiting retry |
 | `novelbot_worker_events_total` | Session stop, failed publication/cleanup, lease failure, and memory sampling events |
+
+Drain events are `drain_started`, `drain_publish_failure`, `drain_completed`, and
+`drain_forced`. A draining worker can have `worker_ready=1` and
+`worker_accepting_sessions=0`: lease health keeps existing sessions usable.
 
 Standard Go runtime metrics are included. The standard Prometheus process
 collector also exports process measurements where supported by the OS; these

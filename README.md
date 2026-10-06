@@ -379,6 +379,7 @@ sqlc and fails closed when PostgreSQL or Redis admission is unavailable.
 | `429` | `session_rate_limit_exceeded` | Tenant creation rate exceeded |
 | `429` | `authentication_rate_limit_exceeded` | Client IP's account request rate exceeded |
 | `503` | `session_capacity_reached` | No worker has free capacity |
+| `503` | `worker_draining` | Reservation delivery raced with drain; retry creation through the API |
 | `503` | `rate_limiter_unavailable` | Account rate enforcement unavailable |
 
 Quota/rate rejections include `Retry-After` in whole seconds. Concurrency
@@ -431,6 +432,8 @@ budget. Forwarded headers from untrusted peers cannot change limiter identity.
 | `WORKER_HTTP_ADDR` | `127.0.0.1:8090` | Private worker listener |
 | `WORKER_URL` | `http://127.0.0.1:8090` | Private HTTP(S) origin reachable by all API replicas |
 | `WORKER_LEASE_TTL` | `15s` | Worker lease; renewed every one third of its lifetime; accepts 3s to 5m |
+| `WORKER_DRAIN_TIMEOUT` | `15m` | Maximum graceful drain before forced browser cleanup; accepts 1s to 24h |
+| `WORKER_STOP_GRACE_PERIOD` | `16m` in Compose | Container stop deadline; when supplied, must cover drain timeout plus at least 30s |
 | `WORKER_AUTH_TOKEN` | Required | Shared private worker credential, at least 32 characters; API and worker roles |
 | `COMPOSE_WORKER_MAX_SESSIONS` | `6` | Browser slots in the container deployment |
 | `COMPOSE_WORKER_CPUS` / `COMPOSE_WORKER_MEMORY` | `4` / `4g` | Enforced worker CPU and memory budgets |
@@ -513,6 +516,13 @@ The API startup budget must cover the workers' launch deadlines. See
 [independent processes](docs/processes.md) for local commands, the two-worker
 Compose deployment, and a worker failure drill. Restarting an API closes client
 WebSockets but leaves browsers running on their workers for reconnection.
+
+Workers drain on SIGTERM or authenticated `POST /internal/drain`: Redis stops
+new placement while existing browsers, CDP/reconnections, expiry, and deletion
+continue. `GET /internal/status` reports progress. Lease loss always fences
+immediately; planned drains exit successfully, with forced cleanup at the deadline.
+See [worker maintenance](docs/processes.md#worker-maintenance--draining) for private
+commands, readiness semantics, and deployment termination deadlines.
 
 The current Redis adapter targets one Redis primary; Redis Cluster/Sentinel
 deployment support is not configured. Redis failures reject new session operations;

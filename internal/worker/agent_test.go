@@ -20,6 +20,8 @@ type directoryStub struct {
 	publishErr error
 	releaseErr error
 	releases   int
+	drains     int
+	drainErr   error
 }
 
 func (d *directoryStub) Register(_ context.Context, w sessions.Worker, _ time.Duration) error {
@@ -32,6 +34,12 @@ func (d *directoryStub) Renew(context.Context, sessions.Worker, time.Duration) e
 	return d.renewErr
 }
 func (*directoryStub) Unregister(context.Context, sessions.Worker) error { return nil }
+func (d *directoryStub) Drain(context.Context, sessions.Worker) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.drains++
+	return d.drainErr
+}
 func (d *directoryStub) Lookup(_ context.Context, clientID, id, state string) (sessions.Record, error) {
 	return sessions.Record{ID: id, ClientID: clientID, State: state, MaxDurationMS: 60000, WorkerID: d.w.ID, WorkerToken: d.w.Token}, nil
 }
@@ -60,7 +68,7 @@ func (l launcherStub) Launch(context.Context) (sessions.Browser, error) { return
 func testAgent(t *testing.T, d *directoryStub) (*Agent, *browserStub) {
 	t.Helper()
 	b := &browserStub{done: make(chan struct{})}
-	a, err := NewAgent(context.Background(), d, launcherStub{b}, sessions.Worker{ID: "worker", URL: "http://127.0.0.1:8090"}, sessions.Options{MaxSessions: 1, TTL: time.Minute, StartupTimeout: time.Second}, 150*time.Millisecond, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	a, err := NewAgent(context.Background(), d, launcherStub{b}, sessions.Worker{ID: "worker", URL: "http://127.0.0.1:8090"}, sessions.Options{MaxSessions: 1, TTL: time.Minute, StartupTimeout: time.Second}, 150*time.Millisecond, time.Second, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}

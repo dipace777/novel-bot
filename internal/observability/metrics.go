@@ -18,6 +18,7 @@ type Worker interface {
 	Stats() sessions.Stats
 	Ready() error
 	PendingCleanup() int
+	Status() sessions.WorkerStatus
 }
 type Groups interface{ ProcessGroups() []int }
 
@@ -71,6 +72,26 @@ func (m *Metrics) Bind(w Worker) {
 			return 0
 		}},
 		{"novelbot_worker_cleanup_pending", "Stopped browser directory releases awaiting retry.", func() float64 { return float64(w.PendingCleanup()) }},
+		{"novelbot_worker_accepting_sessions", "1 while accepting new sessions; 0 while draining or fenced.", func() float64 {
+			if w.Status().Accepting {
+				return 1
+			}
+			return 0
+		}},
+		{"novelbot_worker_draining", "1 while draining with a valid lease.", func() float64 {
+			if w.Status().State == sessions.WorkerDraining {
+				return 1
+			}
+			return 0
+		}},
+		{"novelbot_worker_drain_deadline_seconds", "Drain deadline as a Unix timestamp; 0 before draining.", func() float64 {
+			s := w.Status()
+			if s.DrainDeadline != nil {
+				return float64(s.DrainDeadline.UnixNano()) / 1e9
+			}
+			return 0
+		}},
+		{"novelbot_worker_inflight_creates", "Admitted create RPCs through launch, publication, and failure cleanup.", func() float64 { return float64(w.Status().InFlightCreates) }},
 	} {
 		m.register.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{Name: setting.name, Help: setting.help}, setting.value))
 	}

@@ -654,7 +654,7 @@
         ],
         "operationId": "createBrowserSession",
         "summary": "Launch an isolated Chromium session",
-        "description": "Creates one isolated headless Chromium process. PostgreSQL stores tenant policies; Redis atomically enforces tenant concurrency and creation rate limits while reserving an available worker. Defaults per tenant: 5 starting/active sessions, 30 valid creation attempts per minute, and a maximum 15-minute browser lifetime. Rate budgets count attempts denied by tenant concurrency or worker capacity. The effective lifetime is the smaller of the tenant limit and BROWSER_SESSION_TTL. Returns an authenticated CDP proxy URL; expires_at is authoritative. Deletion, expiry, failed startup, and worker lease loss release quota. No caller-supplied launch flags or lifetime overrides are accepted.",
+        "description": "Creates one isolated headless Chromium process. PostgreSQL stores tenant policies; Redis atomically enforces tenant concurrency and creation rate limits while reserving an available worker. Defaults per tenant: 5 starting/active sessions, 30 valid creation attempts per minute, and a maximum 15-minute browser lifetime. Rate budgets count attempts denied by tenant concurrency or worker capacity. The effective lifetime is the smaller of the tenant limit and BROWSER_SESSION_TTL. Returns an authenticated CDP proxy URL; expires_at is authoritative. Deletion, expiry, failed startup, and worker lease loss release quota. No caller-supplied launch flags or lifetime overrides are accepted. Draining workers are excluded from placement. A launch already admitted locally may finish during drain; a late reservation is released and returns 503 worker_draining. Retry session creation through the public API. Existing-session CDP connections and deletion remain available on draining workers until expiry or the configured drain deadline.",
         "security": [
           {
             "ApplicationBearer": []
@@ -1658,7 +1658,7 @@
         }
       },
       "BrowserUnavailable": {
-        "description": "Worker capacity exhausted (session_capacity_reached, with Retry-After), browser execution unavailable, or tenant policy/Redis admission unavailable. Tenant quota and rate rejections use 429.",
+        "description": "Worker capacity exhausted (session_capacity_reached, with Retry-After), browser execution unavailable, or tenant policy/Redis admission unavailable. Tenant quota and rate rejections use 429. Session creation can also return worker_draining when reservation delivery races with drain; retry after the supplied Retry-After delay.",
         "headers": {
           "X-Request-ID": {
             "$ref": "#/components/headers/RequestID"

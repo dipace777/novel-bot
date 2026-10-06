@@ -28,10 +28,22 @@ func (d *Directory) Register(ctx context.Context, w sessions.Worker, ttl time.Du
 func (d *Directory) Renew(ctx context.Context, w sessions.Worker, ttl time.Duration) error {
 	return d.lease(ctx, w, ttl, "renew")
 }
+func (d *Directory) Drain(ctx context.Context, w sessions.Worker) error {
+	ctx, cancel := bounded(ctx)
+	defer cancel()
+	result, err := drainScript.Run(ctx, d.client, []string{d.workerKey(w)}, w.Token).Int()
+	if err != nil {
+		return err
+	}
+	if result != 1 {
+		return sessions.ErrLeaseLost
+	}
+	return nil
+}
 func (d *Directory) lease(ctx context.Context, w sessions.Worker, ttl time.Duration, mode string) error {
 	ctx, cancel := bounded(ctx)
 	defer cancel()
-	if w.ID == "" || w.Token == "" || w.URL == "" || w.Capacity <= 0 || ttl < time.Millisecond {
+	if w.ID == "" || w.Token == "" || w.URL == "" || w.Capacity <= 0 || ttl < time.Millisecond || (w.State != "" && w.State != sessions.WorkerReady && w.State != sessions.WorkerDraining) {
 		return errors.New("invalid worker lease")
 	}
 	data, err := json.Marshal(w)

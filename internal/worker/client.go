@@ -88,8 +88,13 @@ func statusError(response *http.Response) error {
 				Code string `json:"code"`
 			} `json:"error"`
 		}
-		if err := json.NewDecoder(io.LimitReader(response.Body, 4096)).Decode(&body); err == nil && body.Error.Code == "session_capacity_reached" {
-			return sessions.ErrCapacity
+		if err := json.NewDecoder(io.LimitReader(response.Body, 4096)).Decode(&body); err == nil {
+			switch body.Error.Code {
+			case "session_capacity_reached":
+				return sessions.ErrCapacity
+			case "worker_draining":
+				return sessions.ErrDraining
+			}
 		}
 		return errors.New("worker unavailable")
 	case 504:

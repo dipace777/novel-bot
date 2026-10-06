@@ -15,6 +15,8 @@ import (
 type WorkerService interface {
 	Worker() sessions.Worker
 	Ready() error
+	BeginDrain(context.Context) error
+	Status() sessions.WorkerStatus
 	CreateReserved(context.Context, string, string) (sessions.Session, error)
 	Get(context.Context, string, string) (sessions.Session, error)
 	Delete(context.Context, string, string) error
@@ -28,6 +30,18 @@ type WorkerRouterOptions struct {
 // NewWorkerRouter is served on a separate private listener, never the public API.
 func NewWorkerRouter(agent WorkerService, token string, logger *slog.Logger, options ...WorkerRouterOptions) http.Handler {
 	mux := http.NewServeMux()
+	mux.Handle("/internal/status", getOnly(func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, agent.Status())
+	}))
+	mux.Handle("/internal/drain", methodOnly(http.MethodPost, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+		if err := agent.BeginDrain(ctx); err != nil {
+			writeError(w, r, http.StatusServiceUnavailable, "drain_unavailable", "Unable to confirm worker drain; local admission is stopped")
+			return
+		}
+		writeJSON(w, http.StatusAccepted, agent.Status())
+	})))
 	if len(options) > 0 && options[0].Metrics != nil {
 		mux.Handle("/metrics", getOnly(func(w http.ResponseWriter, r *http.Request) { options[0].Metrics.ServeHTTP(w, r) }))
 	}
@@ -43,6 +57,10 @@ func NewWorkerRouter(agent WorkerService, token string, logger *slog.Logger, opt
 		}
 		if err := check(ctx); err != nil {
 			writeError(w, r, http.StatusServiceUnavailable, "not_ready", "Worker lease unavailable")
+			return
+		}
+		if !agent.Status().Accepting {
+			writeError(w, r, http.StatusServiceUnavailable, "not_ready", "Worker is draining")
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
@@ -92,7 +110,7 @@ func NewWorkerRouter(agent WorkerService, token string, logger *slog.Logger, opt
 		}
 		// Prometheus needs only the stable worker credential. Session execution
 		// additionally requires a tenant and the current worker incarnation.
-		if r.URL.Path == "/metrics" || r.URL.Path == "/readyz" {
+		if r.URL.Path == "/metrics" || r.URL.Path == "/readyz" || r.URL.Path == "/internal/drain" || r.URL.Path == "/internal/status" {
 			mux.ServeHTTP(w, r)
 			return
 		}

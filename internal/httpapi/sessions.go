@@ -131,6 +131,9 @@ func (h sessionHandlers) sessionError(w http.ResponseWriter, r *http.Request, er
 	case errors.Is(err, sessions.ErrCapacity):
 		w.Header().Set("Retry-After", "5")
 		writeError(w, r, http.StatusServiceUnavailable, "session_capacity_reached", "Browser session capacity reached")
+	case errors.Is(err, sessions.ErrDraining):
+		w.Header().Set("Retry-After", "5")
+		writeError(w, r, http.StatusServiceUnavailable, "worker_draining", "Worker is draining; retry session creation")
 	case errors.Is(err, context.DeadlineExceeded):
 		writeError(w, r, http.StatusGatewayTimeout, "browser_timeout", "Browser operation timed out")
 	default:

@@ -234,7 +234,12 @@ func stopBrowser(browser Browser) {
 	_ = browser.Stop(ctx)
 }
 
-type Stats struct{ Capacity, Reserved, Starting, Active int }
+type Stats struct {
+	Capacity int `json:"capacity"`
+	Reserved int `json:"reserved"`
+	Starting int `json:"starting"`
+	Active   int `json:"active"`
+}
 
 func (m *Manager) Stats() Stats {
 	m.mu.Lock()
