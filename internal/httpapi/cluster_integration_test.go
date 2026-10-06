@@ -241,7 +241,7 @@ func TestRedisChromiumSessionAcrossReplicas(t *testing.T) {
 	}
 	d := clusterDirectory(t)
 	profiles := t.TempDir()
-	launcher, err := browser.NewChromium(path, profiles)
+	launcher, err := browser.NewChromium(path, profiles, true)
 	if err != nil {
 		t.Fatal(err)
 	}

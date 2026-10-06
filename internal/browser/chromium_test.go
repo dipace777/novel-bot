@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -15,7 +16,10 @@ func TestMain(m *testing.M) {
 		if mode == "exit" {
 			os.Exit(1)
 		}
-		if mode == "ready" {
+		if mode == "ready" || mode == "ready-headed" {
+			if slices.Contains(os.Args[1:], "--headless") != (mode == "ready") {
+				os.Exit(2)
+			}
 			for _, arg := range os.Args[1:] {
 				if strings.HasPrefix(arg, "--user-data-dir=") {
 					_ = os.WriteFile(strings.TrimPrefix(arg, "--user-data-dir=")+"/DevToolsActivePort", []byte("9222\n/devtools/browser/test\n"), 0600)
@@ -30,34 +34,38 @@ func TestMain(m *testing.M) {
 }
 
 func TestLauncherStopsProcessAndRemovesProfile(t *testing.T) {
-	t.Setenv("NOVELBOT_TEST_BROWSER", "ready")
-	path, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	profiles := t.TempDir()
-	launcher, err := NewChromium(path, profiles)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	browser, err := launcher.Launch(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if browser.Endpoint() != "ws://127.0.0.1:9222/devtools/browser/test" {
-		t.Fatal(browser.Endpoint())
-	}
-	if err := browser.Stop(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if err := browser.Stop(ctx); err != nil {
-		t.Fatal(err)
-	}
-	entries, err := os.ReadDir(profiles)
-	if err != nil || len(entries) != 0 {
-		t.Fatalf("profile leaked: %v, %v", entries, err)
+	for _, mode := range []string{"ready", "ready-headed"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Setenv("NOVELBOT_TEST_BROWSER", mode)
+			path, err := os.Executable()
+			if err != nil {
+				t.Fatal(err)
+			}
+			profiles := t.TempDir()
+			launcher, err := NewChromium(path, profiles, mode == "ready")
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			browser, err := launcher.Launch(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if browser.Endpoint() != "ws://127.0.0.1:9222/devtools/browser/test" {
+				t.Fatal(browser.Endpoint())
+			}
+			if err := browser.Stop(ctx); err != nil {
+				t.Fatal(err)
+			}
+			if err := browser.Stop(ctx); err != nil {
+				t.Fatal(err)
+			}
+			entries, err := os.ReadDir(profiles)
+			if err != nil || len(entries) != 0 {
+				t.Fatalf("profile leaked: %v, %v", entries, err)
+			}
+		})
 	}
 }
 
@@ -70,7 +78,7 @@ func TestFailedAndTimedOutLaunchCleanup(t *testing.T) {
 				t.Fatal(err)
 			}
 			profiles := t.TempDir()
-			launcher, err := NewChromium(path, profiles)
+			launcher, err := NewChromium(path, profiles, true)
 			if err != nil {
 				t.Fatal(err)
 			}

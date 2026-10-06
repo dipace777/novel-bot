@@ -417,6 +417,7 @@ budget. Forwarded headers from untrusted peers cannot change limiter identity.
 | `TRUSTED_PROXY_CIDRS` | Empty | Comma-separated trusted ingress CIDRs for rate-limit client IPs |
 | `SESSION_TTL` | `24h` | Lifetime of each login session |
 | `CHROMIUM_PATH` | Auto-discovery | Chromium/Chrome executable |
+| `BROWSER_HEADLESS` | `true` | Set `false` for visible browser windows on a native desktop worker; bundled Compose workers run headless |
 | `BROWSER_PROFILE_DIR` | OS temp directory | Existing parent directory for isolated profiles |
 | `METRICS_SAMPLE_INTERVAL` | `5s` | Background browser/worker RSS sample interval; accepts 250ms–1m |
 | `BROWSER_MAX_SESSIONS` | `6` | Capacity per worker, including pending launches |

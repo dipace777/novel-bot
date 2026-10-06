@@ -47,7 +47,7 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	launcher, err := browser.NewChromium(cfg.ChromiumPath, cfg.BrowserProfileDir)
+	launcher, err := browser.NewChromium(cfg.ChromiumPath, cfg.BrowserProfileDir, cfg.BrowserHeadless)
 	if err != nil {
 		return err
 	}

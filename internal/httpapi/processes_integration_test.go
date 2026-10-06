@@ -37,7 +37,7 @@ func startRole(t *testing.T, binary string, env map[string]string) *childProcess
 	t.Helper()
 	cmd := exec.Command(binary)
 	// Strip role settings from the parent so the test's configuration is deterministic.
-	settings := []string{"DATABASE_URL", "DB_MAX_CONNS", "API_KEY_PEPPER", "HTTP_ADDR", "AUTH_TIMEOUT", "AUTH_REQUESTS_PER_MINUTE", "TRUSTED_PROXY_CIDRS", "SESSION_TTL", "SESSION_STARTUP_TIMEOUT", "PUBLIC_API_URL", "REDIS_URL", "REDIS_NAMESPACE", "WORKER_AUTH_TOKEN", "WORKER_ID", "WORKER_HTTP_ADDR", "WORKER_URL", "WORKER_LEASE_TTL", "CHROMIUM_PATH", "BROWSER_PROFILE_DIR", "BROWSER_MAX_SESSIONS", "BROWSER_SESSION_TTL", "BROWSER_STARTUP_TIMEOUT", "METRICS_SAMPLE_INTERVAL"}
+	settings := []string{"DATABASE_URL", "DB_MAX_CONNS", "API_KEY_PEPPER", "HTTP_ADDR", "AUTH_TIMEOUT", "AUTH_REQUESTS_PER_MINUTE", "TRUSTED_PROXY_CIDRS", "SESSION_TTL", "SESSION_STARTUP_TIMEOUT", "PUBLIC_API_URL", "REDIS_URL", "REDIS_NAMESPACE", "WORKER_AUTH_TOKEN", "WORKER_ID", "WORKER_HTTP_ADDR", "WORKER_URL", "WORKER_LEASE_TTL", "CHROMIUM_PATH", "BROWSER_PROFILE_DIR", "BROWSER_HEADLESS", "BROWSER_MAX_SESSIONS", "BROWSER_SESSION_TTL", "BROWSER_STARTUP_TIMEOUT", "METRICS_SAMPLE_INTERVAL"}
 	for _, v := range os.Environ() {
 		key, _, _ := strings.Cut(v, "=")
 		skip := false
@@ -286,7 +286,7 @@ func TestIndependentAPIAndWorkerProcesses(t *testing.T) {
 	workers := make([]*childProcess, 2)
 	for i, name := range []string{"a", "b"} {
 		private := freeOrigin(t)
-		workers[i] = startRole(t, workerBinary, map[string]string{"DATABASE_URL": "", "API_KEY_PEPPER": "invalid", "HTTP_ADDR": "invalid", "WORKER_ID": name, "WORKER_HTTP_ADDR": strings.TrimPrefix(private, "http://"), "WORKER_URL": private, "WORKER_AUTH_TOKEN": testWorkerCredential, "REDIS_URL": redisURL, "REDIS_NAMESPACE": schema, "CHROMIUM_PATH": chrome, "BROWSER_PROFILE_DIR": profiles[i], "BROWSER_MAX_SESSIONS": "1", "BROWSER_SESSION_TTL": "1m", "BROWSER_STARTUP_TIMEOUT": "10s", "WORKER_LEASE_TTL": "3s", "METRICS_SAMPLE_INTERVAL": "250ms"})
+		workers[i] = startRole(t, workerBinary, map[string]string{"DATABASE_URL": "", "API_KEY_PEPPER": "invalid", "HTTP_ADDR": "invalid", "WORKER_ID": name, "WORKER_HTTP_ADDR": strings.TrimPrefix(private, "http://"), "WORKER_URL": private, "WORKER_AUTH_TOKEN": testWorkerCredential, "REDIS_URL": redisURL, "REDIS_NAMESPACE": schema, "CHROMIUM_PATH": chrome, "BROWSER_HEADLESS": "true", "BROWSER_PROFILE_DIR": profiles[i], "BROWSER_MAX_SESSIONS": "1", "BROWSER_SESSION_TTL": "1m", "BROWSER_STARTUP_TIMEOUT": "10s", "WORKER_LEASE_TTL": "3s", "METRICS_SAMPLE_INTERVAL": "250ms"})
 		awaitRole(t, workers[i], private, testWorkerCredential)
 		if status, _ := processRequest(t, "GET", private+"/readyz", "", ""); status != 401 {
 			t.Fatal("worker readiness exposed", status)

@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 )
 
@@ -14,6 +15,7 @@ type WorkerConfig struct {
 	WorkerAuthToken       string
 	WorkerLeaseTTL        time.Duration
 	ChromiumPath          string
+	BrowserHeadless       bool
 	BrowserProfileDir     string
 	BrowserMaxSessions    int
 	BrowserSessionTTL     time.Duration
@@ -44,6 +46,9 @@ func LoadWorker() (WorkerConfig, error) {
 		return WorkerConfig{}, err
 	}
 	cfg.ChromiumPath = os.Getenv("CHROMIUM_PATH")
+	if cfg.BrowserHeadless, err = strconv.ParseBool(value("BROWSER_HEADLESS", "true")); err != nil {
+		return WorkerConfig{}, fmt.Errorf("BROWSER_HEADLESS must be true or false")
+	}
 	cfg.BrowserProfileDir = os.Getenv("BROWSER_PROFILE_DIR")
 	if cfg.BrowserMaxSessions, err = integer("BROWSER_MAX_SESSIONS", 6, 10000); err != nil {
 		return WorkerConfig{}, err

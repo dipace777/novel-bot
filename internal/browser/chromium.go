@@ -22,13 +22,14 @@ import (
 type Chromium struct {
 	path       string
 	profileDir string
+	headless   bool
 	mu         sync.Mutex
 	groups     map[int]struct{}
 }
 
 // NewChromium accepts an executable or discovers Chromium/Chrome on PATH/macOS.
 // profileDir is a parent directory; each launch creates its own temporary profile.
-func NewChromium(path, profileDir string) (*Chromium, error) {
+func NewChromium(path, profileDir string, headless bool) (*Chromium, error) {
 	candidates := []string{path}
 	if path == "" {
 		candidates = []string{"chromium", "chromium-browser", "google-chrome", "google-chrome-stable", "/Applications/Chromium.app/Contents/MacOS/Chromium", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"}
@@ -36,7 +37,7 @@ func NewChromium(path, profileDir string) (*Chromium, error) {
 	for _, candidate := range candidates {
 		resolved, err := exec.LookPath(candidate)
 		if err == nil {
-			return &Chromium{path: resolved, profileDir: profileDir, groups: make(map[int]struct{})}, nil
+			return &Chromium{path: resolved, profileDir: profileDir, headless: headless, groups: make(map[int]struct{})}, nil
 		}
 	}
 	return nil, errors.New("Chromium executable not found; install Chromium/Chrome or set CHROMIUM_PATH")
@@ -54,7 +55,12 @@ func (c *Chromium) Launch(ctx context.Context) (sessions.Browser, error) {
 	}
 	// Port 0 asks Chromium to bind an available port itself, avoiding a
 	// reserve-close-launch race. DevToolsActivePort contains the resulting endpoint.
-	cmd := exec.Command(c.path, "--headless", "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0", "--user-data-dir="+profile, "--no-first-run", "--no-default-browser-check", "--disable-background-networking", "about:blank")
+	args := []string{"--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0", "--user-data-dir=" + profile, "--no-first-run", "--no-default-browser-check", "--disable-background-networking"}
+	if c.headless {
+		args = append(args, "--headless")
+	}
+	args = append(args, "about:blank")
+	cmd := exec.Command(c.path, args...)
 	configureProcess(cmd)
 	cmd.Stdout, cmd.Stderr = io.Discard, io.Discard
 	if err := cmd.Start(); err != nil {

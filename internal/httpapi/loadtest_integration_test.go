@@ -30,7 +30,7 @@ func TestChromiumLoadTestCapacityReport(t *testing.T) {
 	}
 	d := clusterDirectory(t)
 	profiles := t.TempDir()
-	launcher, err := browser.NewChromium(executable, profiles)
+	launcher, err := browser.NewChromium(executable, profiles, true)
 	if err != nil {
 		t.Fatal(err)
 	}

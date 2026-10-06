@@ -19,7 +19,7 @@ func TestChromiumSessionIntegration(t *testing.T) {
 		t.Skip("set TEST_CHROMIUM_PATH to test actual Chromium launch and CDP")
 	}
 	profiles := t.TempDir()
-	launcher, err := browser.NewChromium(path, profiles)
+	launcher, err := browser.NewChromium(path, profiles, true)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -41,6 +41,12 @@ The API's `SESSION_STARTUP_TIMEOUT` controls reservation and worker-RPC deadline
 The worker's `BROWSER_STARTUP_TIMEOUT` controls Chromium launch. Set the API budget
 at least as high as the largest worker launch timeout. Both default to `10s`.
 Worker `BROWSER_SESSION_TTL` and each tenant's policy continue to cap lifetime.
+For visible browser windows on your desktop, set `BROWSER_HEADLESS=false` in
+`.env` and restart `make run-worker`. Each newly created session opens a separate
+Chrome/Chromium window; CDP clients connect as usual. Set it back to `true` for
+headless operation. The bundled Docker workers explicitly run headless because
+they have no desktop display; use the native worker for visible-window testing.
+
 Workers must advertise a unique reachable `WORKER_URL`; `127.0.0.1` works only
 when the API and worker run on the same host.
 
