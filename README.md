@@ -299,6 +299,17 @@ const page = await context.newPage();
 await page.goto("https://example.com");
 ```
 
+Run the complete Playwright example with:
+
+```sh
+pnpm --dir examples exec playwright test \
+  --project=chromium --workers=1 --retries=0
+```
+
+See [examples/README.md](examples/README.md) for API/worker startup, API-key
+configuration in `examples/.env`, the five-second browser inspection pause,
+and test reports.
+
 CDP WebSocket handshakes accept Bearer or `X-API-Key`, with the same tenant
 ownership checks as deletion. Credentials are consumed by the API and removed
 before forwarding to Chromium. Swagger documents the WebSocket handshake but
