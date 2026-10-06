@@ -108,28 +108,28 @@ routing requirements](docs/processes.md#worker-maintenance--draining). Productio
 orchestrator manifests/hooks remain task 07; real network-partition qualification
 remains task 10.
 
-### 02. Automated CI and reproducible releases — next task
+### 02. Automated CI and reproducible releases — implemented; CI qualification pending
 
-- [ ] Add CI for formatting, race tests, vet, binary builds, and sqlc consistency.
-- [ ] Add Testcontainers for Go helpers to provision PostgreSQL and Redis with
+- [x] Add CI for formatting, race tests, vet, binary builds, and sqlc consistency.
+- [x] Add Testcontainers for Go helpers to provision PostgreSQL and Redis with
   pinned deployment-compatible images, readiness checks, dynamically mapped ports,
   and cleanup on success/failure. Share containers within a suite while preserving
   per-test PostgreSQL schemas and Redis namespaces; retain existing assertions.
-- [ ] Add `make test-integration` to provision those dependencies automatically.
+- [x] Add `make test-integration` to provision those dependencies automatically.
   Keep `make test` usable without Docker; explicitly requested integration suites
   must fail when Docker/dependencies cannot start or required tests are skipped.
-- [ ] Add `make test-e2e` using Testcontainers to run the actual API image and two
+- [x] Add `make test-e2e` using Testcontainers to run the actual API image and two
   worker images with real Chromium, the production sandbox configuration, and an
   isolated network. Cover routing, restart, lease fencing, draining, and cleanup;
   preserve container logs on failure without exposing credentials.
 - [ ] Run both container-backed suites in Linux CI with Docker available. Document
   local requirements and optional external test URLs for development; CI must
   use isolated infrastructure. Keep `make capacity` as the resource-sizing workflow.
-- [ ] Validate OpenAPI syntax and route/response coverage, plus Compose and future
+- [x] Validate OpenAPI syntax and route/response coverage, plus Compose and future
   production manifests. Documentation is currently maintained manually.
-- [ ] Build versioned API/worker/migration images, record browser and base-image
+- [x] Build versioned API/worker/migration images, record browser and base-image
   versions/digests, scan dependencies/images, and publish an SBOM in release artifacts.
-- [ ] Define a browser/security update schedule and repeat integration/capacity
+- [x] Define a browser/security update schedule and repeat integration/capacity
   checks before promoting a new Chromium or runtime image.
 
 **Done when:** a clean checkout produces the same identified release artifacts,
@@ -137,6 +137,34 @@ remains task 10.
 required integration evidence is attached to CI, and unavailable dependencies,
 skipped required suites, stale generated SQL, or a broken browser sandbox fail
 the pipeline. `make test` remains Docker-independent.
+
+**Local evidence (6 October 2026):** `make check test vet build sqlc-check` and
+actionlint passed. Required Testcontainers integration executed 14 cases without
+skips; the image-based e2e scenario passed with real Chromium namespace/seccomp
+sandboxes, API restart/reconnect, draining, lease fencing, profile cleanup, and
+quota reuse. An unavailable explicit Docker host fails without socket fallback;
+unit tests also reject skipped/missing test evidence. Both success and exercised
+failure paths removed their temporary infrastructure and saved redacted failure
+logs. See [validation summary](docs/benchmarks/testing-2026-10-06.json),
+[testing commands](docs/testing.md), and [release policy](docs/releases.md).
+
+Local identified image archives, package/browser records, CycloneDX SBOMs, and
+Trivy reports were generated under ignored `release-artifacts/local/`. The scan
+gate initially found fixable Perl/base-image and Testcontainers archive dependency
+vulnerabilities; the snapshot security upgrade and dependency patch fixed those
+blockers. Fixed HIGH/CRITICAL findings now number zero. This is a local development
+artifact, with its dirty checkout recorded, not an approved release.
+Unfixed findings, including HIGH/CRITICAL entries, remain in the saved reports
+and require operator review before promotion; passing this gate is not a claim
+that the images have no known vulnerabilities.
+
+**Still required to close task 02:** push the reviewed changes and demonstrate
+both jobs in the checked-in Linux CI workflow, then attach a clean tagged release's
+artifact/SBOM evidence. Workflow syntax and local Docker/Linux browser behavior
+were tested; GitHub Actions execution was not. Production manifest validation is
+added when those manifests exist in task 07. A changed browser/runtime image still
+requires a new target-hardware capacity qualification before promotion; the
+historical six-slot benchmark is not a qualification of these rebuilt images.
 
 ### 03. Browser tenant isolation and network egress — public launch blocker
 
@@ -370,3 +398,4 @@ would require its own scheduler, quotas, and execution lifecycle.
 | --- | --- | --- | --- |
 | 2026-10-06 | Roadmap baseline | Reviewed current API/worker/Redis/auth implementation and recorded ordered tasks. Capacity evidence linked above. | Production gates remain open; next implementation is task 01. |
 | 2026-10-06 | 01 — worker draining | Completed all task 01 criteria; race/vet/build checks, Docker image builds, isolated Redis/PostgreSQL integration suites, and two-worker real-browser/process shutdown tests passed. Commands and evidence paths are recorded above. | Deployment alignment covers Compose; production orchestrator routing/hooks remain task 07 and real network-partition qualification remains task 10. Testcontainers/CI are next in task 02. |
+| 2026-10-06 | 02 — CI/Testcontainers/releases | Added required container suites, pinned Linux CI, contract validation, identified image/archive builds, SBOM/scanning gates, and update policy. Local race/vet/build/sqlc checks, 14 integration cases, real-browser e2e, archive generation, and the fixed HIGH/CRITICAL scan gate passed. Commands and evidence paths are recorded above. | Task remains open for actual Linux CI execution and clean tagged release artifact evidence. New image capacity qualification is required before promotion; production isolation/deployment gates remain open. |

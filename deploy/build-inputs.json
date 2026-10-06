@@ -1,0 +1,6 @@
+{
+  "GO_IMAGE": "golang:1.27.1-bookworm@sha256:a4f46dc39c6b0359a3e1ed86ef14d01b374cc808649679dd5fca2290e6d54202",
+  "BASE_IMAGE": "debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587",
+  "DEBIAN_SNAPSHOT": "20261006T000000Z",
+  "CHROMIUM_VERSION": "154.0.8037.92-1~deb12u1"
+}

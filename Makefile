@@ -1,7 +1,8 @@
 SQLC_VERSION := v1.31.1
 SQLC := $(CURDIR)/bin/sqlc
+IMAGE_PREFIX ?= novelbot
 
-.PHONY: run build test vet db redis migrate tools generate sqlc-check loadtest run-api run-worker up down capacity
+.PHONY: run build test vet db redis migrate tools generate sqlc-check loadtest run-api run-worker up down capacity test-integration test-e2e images-test check release scan-release
 
 run: run-api
 
@@ -21,6 +22,25 @@ build:
 
 test:
 	go test -race ./...
+
+# Dependencies are shared by the suite; individual tests retain their namespaces/schemas.
+test-integration:
+	go run ./cmd/testsuite -suite integration $(INTEGRATION_ARGS)
+
+images-test:
+	python3 scripts/build-images.py --version local --prefix novelbot-test
+
+test-e2e: images-test
+	go run ./cmd/testsuite -suite e2e
+
+check:
+	python3 scripts/check.py
+
+release:
+	python3 scripts/build-images.py --version "$(VERSION)" --prefix "$(IMAGE_PREFIX)" --output release-artifacts/"$(VERSION)"
+
+scan-release:
+	python3 scripts/scan-release.py release-artifacts/"$(VERSION)"
 
 vet:
 	go vet ./...

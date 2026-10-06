@@ -1,0 +1,104 @@
+{
+  "date": "2026-10-06",
+  "host": {
+    "os": "Darwin",
+    "architecture": "arm64",
+    "docker_browser_platform": "linux/arm64"
+  },
+  "source_revision": "96956254fa87d69566f113feabea9d6deb49825d",
+  "working_tree_dirty": true,
+  "checks": {
+    "make check test vet build sqlc-check": "passed",
+    "actionlint v1.7.12": "passed",
+    "go vet -tags=e2e ./tests/e2e": "passed",
+    "unavailable_explicit_DOCKER_HOST": "nonzero exit, no socket fallback",
+    "skip_or_missing_required_evidence": "unit tests reject it"
+  },
+  "suites": {
+    "integration": {
+      "passed_cases": [
+        "novel-bot/internal/storage/redis::TestAtomicCapacityAcrossConcurrentReservations",
+        "novel-bot/internal/storage/redis::TestOwnershipPublicationAndWorkerIncarnationFencing",
+        "novel-bot/internal/storage/redis::TestReservationsAndWorkerLeasesExpire",
+        "novel-bot/internal/storage/redis::TestDrainSurvivesRenewAndPreservesExistingReservations",
+        "novel-bot/internal/storage/redis::TestReservationsExcludeDrainingWorkerAcrossConcurrentCalls",
+        "novel-bot/internal/storage/redis::TestTenantQuotaAtomicAcrossGatewaysAndWorkers",
+        "novel-bot/internal/storage/redis::TestTenantQuotaCleanupAndPublicationDuration",
+        "novel-bot/internal/storage/redis::TestSharedRateLimitAtomicAndWindowExpiry",
+        "novel-bot/internal/storage/redis::TestSessionRateCountsRejectedAttemptsWithoutLeakingQuota",
+        "novel-bot/internal/httpapi::TestRedisRoutesSessionsAcrossReplicasAndProtectsWorkerAPI",
+        "novel-bot/internal/httpapi::TestTenantAdmissionAcrossGatewaysAndBrowserExpiry",
+        "novel-bot/internal/httpapi::TestFailedStartupReleasesTenantQuota",
+        "novel-bot/internal/httpapi::TestAuthenticationRateBudgetSharedAcrossRouters",
+        "novel-bot/internal/storage/postgres::TestPostgresAuthenticationIntegration"
+      ],
+      "skipped_cases": 0,
+      "command": "make test-integration"
+    },
+    "e2e": {
+      "passed_cases": [
+        "novel-bot/tests/e2e::TestContainerPlatformLifecycle"
+      ],
+      "skipped_cases": 0,
+      "command": "make test-e2e"
+    }
+  },
+  "browser": "Chromium 154.0.8037.92 built on Debian GNU/Linux 12 (bookworm)",
+  "build_inputs": {
+    "GO_IMAGE": "golang:1.27.1-bookworm@sha256:a4f46dc39c6b0359a3e1ed86ef14d01b374cc808649679dd5fca2290e6d54202",
+    "BASE_IMAGE": "debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587",
+    "DEBIAN_SNAPSHOT": "20261006T000000Z",
+    "CHROMIUM_VERSION": "154.0.8037.92-1~deb12u1"
+  },
+  "images": {
+    "api": {
+      "name": "novelbot-test/api:local",
+      "image_config_digest": "sha256:802e34d2da1993f15febc52b6bf01b9ffded5fe25a2353b8e589a28fdff14859",
+      "architecture": "arm64",
+      "binary_sha256": "e98eeced7dd88e8e5c11e551e012d4bd6b02fa839c476733ef8b0005132161e5"
+    },
+    "worker": {
+      "name": "novelbot-test/worker:local",
+      "image_config_digest": "sha256:95f01f203c7b0228290b4f5f134be160946b7fb78bebfa36eaa10fb5a6e971d4",
+      "architecture": "arm64",
+      "binary_sha256": "035e044011b5e3b5f181b8148eb13eefe32fd417a10997da5bf7c1b574808ed6"
+    },
+    "migrate": {
+      "name": "novelbot-test/migrate:local",
+      "image_config_digest": "sha256:9f9d7339a08d8d297fcd414f04c21d0b54bc5f76cd266c40d367e8fce64fb0a9",
+      "architecture": "arm64",
+      "binary_sha256": "b8d2e0d674dd2e31334627f60b668606c125c4052af2fd9e3a6e4e6be6b3f521"
+    }
+  },
+  "release_artifacts": "release-artifacts/local/ (ignored; local development artifact)",
+  "scan": {
+    "scanner": "trivy 0.75.0",
+    "generated_at": "2026-10-06T09:01:45.076262+00:00",
+    "blocking_fixed_high_or_critical": 0,
+    "findings": {
+      "dependencies.vulnerabilities.json": {
+        "total": 1,
+        "unfixed_high_or_critical": 0
+      },
+      "worker.vulnerabilities.json": {
+        "total": 557,
+        "unfixed_high_or_critical": 92
+      },
+      "migrate.vulnerabilities.json": {
+        "total": 237,
+        "unfixed_high_or_critical": 51
+      },
+      "api.vulnerabilities.json": {
+        "total": 237,
+        "unfixed_high_or_critical": 51
+      }
+    }
+  },
+  "limitations": [
+    "GitHub Actions Linux execution and clean tagged release artifacts remain unqualified.",
+    "The local artifact records a dirty checkout and is not a production release.",
+    "Unfixed vulnerability findings require review before promotion.",
+    "Existing ARM64 capacity measurements do not qualify the rebuilt images or AMD64 capacity.",
+    "Production tenant isolation and deployment qualification remain later roadmap tasks."
+  ]
+}

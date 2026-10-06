@@ -562,6 +562,13 @@ fixture SQL remain in their respective migration/test code.
 make test
 make vet
 make build
+make check sqlc-check
+
+# Provision isolated dependencies; required tests cannot silently skip:
+make test-integration
+
+# Actual API/migration images and two sandboxed Chromium workers:
+make test-e2e
 
 # Load .env first and keep PostgreSQL running:
 TEST_DATABASE_URL="$DATABASE_URL" make test
@@ -599,6 +606,17 @@ Without `TEST_DATABASE_URL`, PostgreSQL integration tests are explicitly skipped
 They create and remove an isolated schema and exercise the full HTTP account and
 API key lifecycle, persistence, transactional signup rollback, tenant isolation,
 and migration checksums. The test role needs schema creation permission.
+
+The commands using explicit test URLs are optional native development flows.
+`make test-integration` and `make test-e2e` provision and clean up their own
+Testcontainers infrastructure, without reading `.env`. Required suites fail if
+Docker/dependencies cannot start or a required case skips. See [testing and CI](docs/testing.md)
+for requirements, evidence, failure logs, and external dependency overrides.
+
+Linux CI runs formatting/contract checks, race tests, vet, builds, sqlc consistency,
+and both required suites. Build inputs are pinned by manifest digest and Debian
+snapshot. Tagged releases create versioned image archives, browser/package records,
+SBOMs, and vulnerability reports; see [release policy](docs/releases.md).
 
 `make migrate` runs `cmd/migrate`, applying embedded `*.up.sql` files in filename
 order under a transaction and PostgreSQL advisory lock. Applied files are recorded

@@ -8,3 +8,7 @@
 
 /loadtest-report.json
 /loadtest-results/
+/test-results/
+/release-artifacts/
+__pycache__/
+*.pyc

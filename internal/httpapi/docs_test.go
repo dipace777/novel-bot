@@ -1,10 +1,17 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/getkin/kin-openapi/openapi3"
 
 	"novel-bot/api"
 )
@@ -51,6 +58,13 @@ func TestDocumentationIsPublicAndEmbedded(t *testing.T) {
 }
 
 func TestOpenAPIContractAndLocalReferences(t *testing.T) {
+	document, err := openapi3.NewLoader().LoadFromData(api.Specification)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := document.Validate(context.Background()); err != nil {
+		t.Fatalf("OpenAPI validation: %v", err)
+	}
 	var spec map[string]any
 	if err := json.Unmarshal(api.Specification, &spec); err != nil {
 		t.Fatal(err)
@@ -144,6 +158,52 @@ func TestOpenAPIContractAndLocalReferences(t *testing.T) {
 			if _, ok := properties[secret]; ok {
 				t.Fatalf("secret documented in metadata: %s.%s", name, secret)
 			}
+		}
+	}
+}
+
+// Detect newly mounted public route patterns missing from the contract. Method
+// coverage is checked above; actual response schemas are exercised by e2e.
+func TestOpenAPICoversMountedRoutePatterns(t *testing.T) {
+	document, err := openapi3.NewLoader().LoadFromData(api.Specification)
+	if err != nil {
+		t.Fatal(err)
+	}
+	patterns := map[string]bool{}
+	for _, file := range []string{"router.go", "sessions.go"} {
+		parsed, err := parser.ParseFile(token.NewFileSet(), file, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ast.Inspect(parsed, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok || len(call.Args) == 0 {
+				return true
+			}
+			selector, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || (selector.Sel.Name != "Handle" && selector.Sel.Name != "HandleFunc") {
+				return true
+			}
+			literal, ok := call.Args[0].(*ast.BasicLit)
+			if !ok || literal.Kind != token.STRING {
+				return true
+			}
+			path, err := strconv.Unquote(literal.Value)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if path != "/" && !strings.HasSuffix(path, "/") {
+				patterns[path] = true
+			}
+			return true
+		})
+	}
+	if len(patterns) != document.Paths.Len() {
+		t.Fatalf("mounted route count %d differs from OpenAPI %d", len(patterns), document.Paths.Len())
+	}
+	for path := range patterns {
+		if document.Paths.Value(path) == nil {
+			t.Fatalf("mounted route %s missing from OpenAPI", path)
 		}
 	}
 }

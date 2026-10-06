@@ -7,6 +7,10 @@
 !.env.example
 bin
 loadtest-results
+test-results
+release-artifacts
+__pycache__
+*.pyc
 loadtest-report.json
 *.test
 .DS_Store
